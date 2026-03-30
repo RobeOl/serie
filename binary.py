@@ -149,7 +149,7 @@ def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
 		prima = note1.name
 
 		note1.transpose(i,inPlace=True)
-		f_octave(note1,ottave)
+		# f_octave(note1,ottave)
 		f_durata(note1)
 		notes.append(copy.deepcopy(note1))
 		seconda = note1.name
@@ -162,13 +162,13 @@ def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
 		# following leaps/intervals
 		while condition: 
 			note1.transpose(j,inPlace=True)
-			f_octave(note1,ottave)
+			# f_octave(note1,ottave)
 			f_durata(note1)
 			notes.append(copy.deepcopy(note1))
 			prima = note1.name
 
 			note1.transpose(i,inPlace=True)
-			f_octave(note1,ottave)
+			# f_octave(note1,ottave)
 			f_durata(note1)
 			notes.append(copy.deepcopy(note1))
 			seconda = note1.name
