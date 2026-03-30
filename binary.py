@@ -4,20 +4,16 @@ import copy
 
 def f_octave(x,ottave):
 	if ottave == 1:
-	    # limit notes to octaves 4-5
-	    if x.octave==6:
- 	       x.octave=4
-	else:
-		# limit notes to octaves 4-6
+	    # limit notes to octaves 4-6
 	    if x.octave==7:
  	       x.octave=4
+
 
 
 def f_durata(x):
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 
 def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
-	ottave = 2
 	#lista_note = ["C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4","A#4","B4"]
 	#nota_in= lista_note[starting_note]
 	#c = note.Note(nota_in)
