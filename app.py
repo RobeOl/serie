@@ -19,9 +19,8 @@ last_params = None
 access_count = 0
 
 
-def generate_music(start_note, sequence_type, tempo_type, harmony,
+def generate_music(start_note, sequence_type, tempo_type, harmony, ottave,
                    note_length=1,
-                   ottave=1,
                    interval=3, leap=-1,
                    interval1=3, leap1=3,
                    interval2=6, leap2=-2):
@@ -53,8 +52,8 @@ def get_cached_stream(data):
         data.get("sequence_type"),
         data.get("tempo"),
         data.get("harmony"),
-        float(data.get("note_length", 1)),
         data.get("octave", 1),
+        float(data.get("note_length", 1)),
         data.get("interval", 0),
         data.get("leap", 0),
         data.get("interval1", 0),
