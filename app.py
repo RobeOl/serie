@@ -54,7 +54,7 @@ def get_cached_stream(data):
         data.get("tempo"),
         data.get("harmony"),
         float(data.get("note_length", 1)),
-        float(data.get("octave", 1)),
+        data.get("octave", 1),
         data.get("interval", 0),
         data.get("leap", 0),
         data.get("interval1", 0),
