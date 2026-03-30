@@ -12,7 +12,7 @@ def f_durata(x):
 	# x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 	x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 
-def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,starting_note=0:
+def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,starting_note=0):
     #lista_note = ["C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4"]
     #nota_in= lista_note[starting_note]
     #x = note.Note(nota_in)
