@@ -7,6 +7,11 @@ def f_octave(x,ottave):
 	    # limit notes to octaves 4-5
 	    if x.octave==6:
  	       x.octave=4
+	else:
+		# limit notes to octaves 4-6
+	    if x.octave==7:
+ 	       x.octave=4
+
 
 def f_durata(x):
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
