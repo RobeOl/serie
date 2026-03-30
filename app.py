@@ -26,12 +26,12 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, ottave,
                    interval2=6, leap2=-2):
 
     if sequence_type == "Binary":
-        s = genera_binary(tempo_type, note_length, interval, leap, start_note,ottave)
+        s = genera_binary(tempo_type, note_length, interval, leap, ottave, start_note)
     else:
         s = genera_quaternary(tempo_type, note_length,
                               interval1, leap1,
                               interval2, leap2,
-                              start_note, ottave)
+                              ottave, start_note)
 
     s.insert(0, metadata.Metadata())
     s.metadata.title = ""

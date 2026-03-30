@@ -11,7 +11,7 @@ def f_octave(x,ottave):
 def f_durata(x):
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 
-def genera_binary(tipo,note_len,i,j,starting_note,ottave=1):
+def genera_binary(tipo,note_len,i,j,ottave,starting_note):
 	#lista_note = ["C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4","A#4","B4"]
 	#nota_in= lista_note[starting_note]
 	#c = note.Note(nota_in)
