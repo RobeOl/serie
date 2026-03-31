@@ -8,7 +8,7 @@ def f_octave(x, ottave):
         x.octave = 4
     elif (ottave == 1) and (x.octave > 6):
         x.octave = 4
-    elif (ottave == 2) and (x.octave > 7):
+    elif (ottave == 2) and (x.octave > 6):
         x.octave = 4
 
 
