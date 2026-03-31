@@ -3,10 +3,8 @@ from music21 import *
 import copy
 
 def f_octave(x, ottave):
-    if (ottave == 1) and (x.octave == 6):
+    if (ottave == 1) and (x.octave >= 6):
         # limit notes to octaves 4-5
-        x.octave = 4
-    elif (ottave == 1) and (x.octave > 6):
         x.octave = 4
     elif (ottave == 2) and (x.octave > 6):
         x.octave = 4
