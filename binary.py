@@ -2,11 +2,15 @@ from music21 import *
 import random
 import copy
 
-def f_octave(x,ottave):
-	if ottave == 1:
-	    # limit notes to octaves 4-6
-	    if x.octave==7:
- 	       x.octave=4
+def f_octave(x, ottave):
+    if (ottave == 1) and (x.octave == 5):
+        # limit notes to octaves 4-5
+        x.octave = 4
+    elif (ottave == 1) and (x.octave > 5):
+        x.octave = 4
+    elif (ottave == 2) and (x.octave > 5):
+        x.octave = 4
+
 
 def f_durata(x):
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
