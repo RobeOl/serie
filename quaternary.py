@@ -15,7 +15,7 @@ def f_durata(x):
 def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,starting_note=0):
     x = note.Note(starting_note)
 
-    if starting_note <= 8:
+    if starting_note <= 7:
 	    x.octave = 4
     else:
 	    x.octave = 3

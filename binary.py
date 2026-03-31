@@ -14,7 +14,7 @@ def f_durata(x):
 def genera_binary(tipo,note_len,i,j,ottave,starting_note):
 	c = note.Note(starting_note)
 
-	if starting_note <= 8:
+	if starting_note <= 7:
 		c.octave = 4
 	else:
 		c.octave = 3
