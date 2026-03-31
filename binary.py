@@ -3,10 +3,9 @@ import random
 import copy
 
 def f_octave(x, ottave, oct):
-    if (ottave == 1) and (x.octave >= 6):
-        if x.octave==(oct+3):
-        	x.octave=oct
-    elif (ottave == 2) and (x.octave > 6):
+    if (ottave == 1) and (x.octave >= (oct+2)):
+        x.octave=oct
+    elif (ottave == 2) and (x.octave >= (oct+3)):
         x.octave = oct
 
 
