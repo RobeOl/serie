@@ -8,17 +8,16 @@ def f_octave(x,ottave):
 	    if x.octave==7:
  	       x.octave=4
 
-
-
 def f_durata(x):
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 
-def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
-	#lista_note = ["C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4","A#4","B4"]
-	#nota_in= lista_note[starting_note]
-	#c = note.Note(nota_in)
+def genera_binary(tipo,note_len,i,j,ottave,starting_note):
 	c = note.Note(starting_note)
-	#c = note.Note("C#")
+
+	if starting_note <= 8:
+		c.octave = 4
+	else:
+		c.octave = 3
 
 	notes = []
 
@@ -149,7 +148,7 @@ def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
 		prima = note1.name
 
 		note1.transpose(i,inPlace=True)
-		# f_octave(note1,ottave)
+		f_octave(note1,ottave)
 		f_durata(note1)
 		notes.append(copy.deepcopy(note1))
 		seconda = note1.name
@@ -162,13 +161,13 @@ def genera_binary(tipo,note_len,i,j,ottave,starting_note=0):
 		# following leaps/intervals
 		while condition: 
 			note1.transpose(j,inPlace=True)
-			# f_octave(note1,ottave)
+			f_octave(note1,ottave)
 			f_durata(note1)
 			notes.append(copy.deepcopy(note1))
 			prima = note1.name
 
 			note1.transpose(i,inPlace=True)
-			# f_octave(note1,ottave)
+			f_octave(note1,ottave)
 			f_durata(note1)
 			notes.append(copy.deepcopy(note1))
 			seconda = note1.name
