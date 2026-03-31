@@ -160,12 +160,12 @@ Leap2 <input id="leap2" type="number" value="-2">
 
 <label>
     <input type="checkbox" id="octave">
-    ottave
+    Octaves
     <span id="octaveLabel" style="margin-left:10px; color:#555;">
-      (2 ottave)
+      (2 octaves)
     </span>
   </label>
-
+  <br>
 <!-- <label><input type="checkbox" id="harmony"> Harmony</label> -->
 <label>
   <input type="checkbox" id="harmony"> Harmony
@@ -206,9 +206,9 @@ document.getElementById("octave").addEventListener("change", function() {
     const label = document.getElementById("octaveLabel")
 
     if(this.checked){
-        label.textContent = "(1 ottava)"
+        label.textContent = "(1 octave)"
     } else {
-        label.textContent = "(2 ottave)"
+        label.textContent = "(2 octaves)"
     }
 })
 
@@ -250,7 +250,7 @@ function getParams(){
         tempo: tempo.value,
         harmony: harmony.checked,
         note_length: parseFloat(noteLength.value),
-        octave: document.getElementById("octave").checked ? 1 : 2
+        octave: document.getElementById("octave").checked ? 1 : 2,
         ...params
     }
 }
@@ -292,7 +292,7 @@ let serverAwake = false;
 
 async function checkServer() {
     try {
-        const res = await fetch("https://serie2.onrender.com/health");
+        const res = await fetch("https://serie.onrender.com/health");
 
         if (res.ok) {
             serverAwake = true;
@@ -314,35 +314,6 @@ function retryCheck() {
 checkServer();
 
 
-// async function generateMusic(){
-
-//     const params = getParams()
-
-//     // MIDI
-//     const midiRes = await fetch("https://serie2.onrender.com/generate", {
-//         method: "POST",
-//         headers: {"Content-Type":"application/json"},
-//         body: JSON.stringify(params)
-//     })
-
-//     const midiBlob = await midiRes.blob()
-//     const midiBuffer = await midiBlob.arrayBuffer()
-//     midiData = new Midi(midiBuffer)
-
-//     // SCORE
-//     const scoreRes = await fetch("https://serie2.onrender.com/score", {
-//         method: "POST",
-//         headers: {"Content-Type":"application/json"},
-//         body: JSON.stringify(params)
-//     })
-
-//     const scoreBlob = await scoreRes.blob()
-//     const scoreUrl = URL.createObjectURL(scoreBlob)
-
-//     await osmd.load(scoreUrl)
-//     osmd.render()
-// }
-
 async function generateMusic(){
 
 if(!serverAwake){
@@ -352,7 +323,7 @@ if(!serverAwake){
 
 const params = getParams()
 
-const midiRes = await fetch("https://serie2.onrender.com/generate", {
+const midiRes = await fetch("https://serie.onrender.com/generate", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify(params)
@@ -362,7 +333,7 @@ const midiBlob = await midiRes.blob()
 const midiBuffer = await midiBlob.arrayBuffer()
 midiData = new Midi(midiBuffer)
 
-const scoreRes = await fetch("https://serie2.onrender.com/score", {
+const scoreRes = await fetch("https://serie.onrender.com/score", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify(params)
