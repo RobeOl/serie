@@ -399,157 +399,17 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             current_couple = [prima,seconda]
             condition = (current_couple!=first_couple)
             #print('CURRENT: ',current_couple)
-
-            # right hand
-            melody = stream.Part()
-            melody.insert(0, instrument.Piano())
-            if bass_clef:
-                melody.insert(0, clef.BassClef())
-            else:
-                melody.insert(0, clef.TrebleClef())
-            # remove last element
-            notes.pop()
-            melody.append(notes)
-            
-
-    """ if harmony and tipo=="sequence-constrained" and harmony_type=="classic":
-        # right hand
-        right = stream.Part()
-        right.insert(0, instrument.Piano())
-        if bass_clef:
-            right.insert(0, clef.BassClef())
-        else:
-            right.insert(0, clef.TrebleClef())
-        # remove last element
-        notes.pop()
-        right.append(notes)
-        # left hand
-        left = stream.Part()
-        left.insert(0, instrument.Piano())
-        left.insert(0, clef.BassClef())
-        # chords based on four notes
-        N = len(notes)-1
-        nn = 0
-        while nn<N:
-            X1 = copy.deepcopy(notes[nn])
-            X1.octave = 3
-            X2 = copy.deepcopy(notes[nn+1])
-            X2.octave = 3
-            X3 = copy.deepcopy(notes[nn+2])
-            X3.octave = 3
-            X4 = copy.deepcopy(notes[nn+3])
-            X4.octave = 3
-            durata = X1.duration.quarterLength
-            durata = durata*4
-            #Cx = spread_chord_min_third([X1, X2, X3, X4])
-            Cx = chord.Chord([X1,X2,X3,X4])
-            Cx.duration.quarterLength = durata
-            left.append(Cx)
-            #print(Cx)
-            nn = nn+4
-        # === Score (grand staff) ===
-        melody = stream.Score()
-        melody.insert(0, right)
-        melody.insert(0, left)
-    elif harmony and tipo=="sequence-constrained" and harmony_type=="onbeat":
-        # right hand
-        right = stream.Part()
-        right.insert(0, instrument.Piano())
-        if bass_clef:
-            right.insert(0, clef.BassClef())
-        else:
-            right.insert(0, clef.TrebleClef())
-        # remove last element
-        notes.pop()
-        right.append(notes)
-        # left hand
-        left = stream.Part()
-        left.insert(0, instrument.Piano())
-        left.insert(0, clef.BassClef())
-        # chords based on two notes (1-3 and 2-4)
-        N = len(notes)-1
-        nn = 0
-        while nn<N:
-            X1 = copy.deepcopy(notes[nn])
-            X1.octave = 3
-            X2 = copy.deepcopy(notes[nn+1])
-            X2.octave = 3
-            X3 = copy.deepcopy(notes[nn+2])
-            X3.octave = 3
-            X4 = copy.deepcopy(notes[nn+3])
-            X4.octave = 3
-            durata = X1.duration.quarterLength
-            durata = durata*2
-            Cx = make_chord_with_min_third(X1, X3)
-            #Cx = chord.Chord([X1,X3])
-            Cx.duration.quarterLength = durata
-            left.append(Cx)
-            Cx = make_chord_with_min_third(X2, X4)
-            #Cx = chord.Chord([X2,X4])
-            Cx.duration.quarterLength = durata
-            left.append(Cx)
-            #print(Cx)
-            nn = nn+4
-        # === Score (grand staff) ===
-        melody = stream.Score()
-        melody.insert(0, right)
-        melody.insert(0, left)
-    elif harmony and tipo=="sequence-constrained" and harmony_type=="offbeat":
-        # right hand
-        right = stream.Part()
-        right.insert(0, instrument.Piano())
-        if bass_clef:
-            right.insert(0, clef.BassClef())
-        else:
-            right.insert(0, clef.TrebleClef())
-        # remove last element
-        notes.pop()
-        right.append(notes)
-        # left hand
-        left = stream.Part()
-        left.insert(0, instrument.Piano())
-        left.insert(0, clef.BassClef())
-        # chords based on four notes
-        N = len(notes)-1
-        nn = 0
-        while nn<N:
-            X1 = copy.deepcopy(notes[nn])
-            X1.octave = 3
-            X2 = copy.deepcopy(notes[nn+1])
-            X2.octave = 3
-            X3 = copy.deepcopy(notes[nn+2])
-            X3.octave = 3
-            X4 = copy.deepcopy(notes[nn+3])
-            X4.octave = 3
-            durata = X1.duration.quarterLength
-            durata = durata*2
-            Cx = make_chord_with_min_third(X2, X4)
-            #Cx = chord.Chord([X2,X4])
-            Cx.duration.quarterLength = durata
-            left.append(Cx)
-            Cx = make_chord_with_min_third(X1, X3)
-            #Cx = chord.Chord([X1,X3])
-            Cx.duration.quarterLength = durata
-            left.append(Cx)
-            #print(Cx)
-            nn = nn+4
-        # === Score (grand staff) ===
-        melody = stream.Score()
-        if bass_clef:
-            right_bass = right.transpose(-24)
-            right = right_bass
-        melody.insert(0, right)
-        melody.insert(0, left)
+           
+ 
+    melody = stream.Stream()
+    # remove last element
+    notes.pop()
+    if bass_clef:
+        melody.insert(0, clef.BassClef())
+        melody.append(notes)
+        melody_bass = melody.transpose(-24)
+        melody = melody_bass
     else:
-        melody = stream.Stream()
-        # remove last element
-        notes.pop()
-        if bass_clef:
-            melody.insert(0, clef.BassClef())
-            melody.append(notes)
-            melody_bass = melody.transpose(-24)
-            melody = melody_bass
-        else:
-            melody.append(notes) """
-   
+        melody.append(notes)
+
     return(melody)
