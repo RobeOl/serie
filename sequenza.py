@@ -8,7 +8,7 @@ def genera_sequenza(seq_type,tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_n
 
     if seq_type=="Binary":
         s = genera_binary(tipo,note_len,i,j,ottave,bass_clef,starting_note,harmony,harmony_type)
-    else
+    else:
         s = genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,harmony,harmony_type)
 
     return(s)
