@@ -400,8 +400,19 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             condition = (current_couple!=first_couple)
             #print('CURRENT: ',current_couple)
 
+            # right hand
+            melody = stream.Part()
+            melody.insert(0, instrument.Piano())
+            if bass_clef:
+                melody.insert(0, clef.BassClef())
+            else:
+                melody.insert(0, clef.TrebleClef())
+            # remove last element
+            notes.pop()
+            melody.append(notes)
+            
 
-    if harmony and tipo=="sequence-constrained" and harmony_type=="classic":
+    """ if harmony and tipo=="sequence-constrained" and harmony_type=="classic":
         # right hand
         right = stream.Part()
         right.insert(0, instrument.Piano())
@@ -539,6 +550,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             melody_bass = melody.transpose(-24)
             melody = melody_bass
         else:
-            melody.append(notes)
+            melody.append(notes) """
    
     return(melody)
