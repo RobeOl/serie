@@ -41,6 +41,7 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         melody.insert(0, s)
         melody.insert(0, left_hand)
     else:
+        melody = s
         melody.insert(0, key.Key('C'))
         melody.insert(0, metadata.Metadata())
         melody.metadata.title = ""
