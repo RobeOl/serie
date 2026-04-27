@@ -15,25 +15,6 @@ def make_chord_with_min_third(A, B):
 
     return chord.Chord([A, B])
 
-def spread_chord_min_third(notes, min_semitones=3):
-    # copia per non modificare gli oggetti originali
-    notes = [n for n in notes]
-
-    # ordina per altezza (MIDI)
-    notes.sort(key=lambda n: n.pitch.midi)
-
-    for i in range(1, len(notes)):
-        prev = notes[i - 1]
-        curr = notes[i]
-
-        # alza finché la distanza è sufficiente
-        while (curr.pitch.midi - prev.pitch.midi) < min_semitones:
-            curr = curr.transpose(12)
-
-        notes[i] = curr
-
-    return chord.Chord(notes)
-
 def genera_armonia(seq_type,harmony_type,s):
     if seq_type=="Binary":
         notes=s.notes
@@ -53,7 +34,7 @@ def genera_armonia(seq_type,harmony_type,s):
             Cx.duration.quarterLength = durata
             left.append(Cx)
             nn = nn+2 
-        left.append(note.Note(notes[1]))       
+        left.append(notes[1])
     elif seq_type=="Quaternary":
         notes=s.notes
         # left hand
@@ -117,8 +98,6 @@ def genera_armonia(seq_type,harmony_type,s):
                 Cx.duration.quarterLength = durata
                 left.append(Cx)
                 nn = nn+4
-
         # last note = first note
-        #x = note.Note(notes[1])
-        #left.append(x)
+        left.append(notes[1])
     return(left)
