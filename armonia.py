@@ -1,5 +1,5 @@
-import random
 from music21 import *
+import copy
 
 def make_chord_with_min_third(A, B):
     # calcola distanza in semitoni (melodica A → B)
