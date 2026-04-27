@@ -34,8 +34,8 @@ def spread_chord_min_third(notes, min_semitones=3):
 
     return chord.Chord(notes)
 
-def genera_armonia(seq_type,tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,harmony,harmony_type):
+def genera_armonia(seq_type,tipo,s):
 
-    s = None
+    sx = None
 
-    return(s)
+    return(sx)
