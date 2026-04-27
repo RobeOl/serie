@@ -35,18 +35,22 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         ottave, bass_clef, start_note, harmony, harmony_type)
 
     if harmony and tempo_type=="sequence-constrained":
-        left_hand = genera_armonia(sequence_type,tempo_type,s)
+        left = genera_armonia(sequence_type,tempo_type,s)
+        # right hand
+        right = s
+        right.insert(0, instrument.Piano())
+        left.insert(0, instrument.Piano())
+        left.insert(0, clef.BassClef())
         # === Score (grand staff) ===
         melody = stream.Score()
-        melody.insert(0, s)
-        melody.insert(0, left_hand)
+        melody.insert(0, right)
+        melody.insert(0, left)
     else:
         melody = s
         melody.insert(0, key.Key('C'))
         melody.insert(0, metadata.Metadata())
         melody.metadata.title = ""
         melody.metadata.composer = ""
-
         melody.insert(0, instrument.Piano())
 
     return melody
