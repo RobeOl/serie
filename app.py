@@ -49,6 +49,14 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         melody.insert(0, left)
     else:
         melody = s
+        ts = meter.TimeSignature('4/4')
+        melody.insert(0, ts)
+        total_duration = melody.duration.quarterLength
+        measure_duration = ts.barDuration.quarterLength
+        remainder = total_duration % measure_duration
+        if remainder != 0:
+            missing = measure_duration - remainder
+            melody.append(note.Rest(quarterLength=missing))
         melody.insert(0, key.Key('C'))
         melody.insert(0, metadata.Metadata())
         melody.metadata.title = ""
