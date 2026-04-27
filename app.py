@@ -35,16 +35,20 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         ottave, bass_clef, start_note, harmony, harmony_type)
 
     if harmony and tempo_type=="sequence-constrained":
-        sx = genera_armonia(sequence_type,tempo_type,s)
+        left_hand = genera_armonia(sequence_type,tempo_type,s)
+        # === Score (grand staff) ===
+        melody = stream.Score()
+        melody.insert(0, s)
+        melody.insert(0, left_hand)
     else:
-        s.insert(0, key.Key('C'))
-        s.insert(0, metadata.Metadata())
-        s.metadata.title = ""
-        s.metadata.composer = ""
+        melody.insert(0, key.Key('C'))
+        melody.insert(0, metadata.Metadata())
+        melody.metadata.title = ""
+        melody.metadata.composer = ""
 
-        s.insert(0, instrument.Piano())
+        melody.insert(0, instrument.Piano())
 
-    return s
+    return melody
 
 
 # 🔹 FUNZIONE DI ACCESSO CON CACHE
