@@ -4,6 +4,7 @@ from music21 import *
 import tempfile
 import os
 from sequenza import genera_sequenza
+from armonia import genera_armonia
 
 app = Flask(__name__)
 
@@ -33,7 +34,7 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         interval2, leap2,
         ottave, bass_clef, start_note, harmony, harmony_type)
 
-    if harmony and tipo=="sequence-constrained":
+    if harmony and tempo_type=="sequence-constrained":
         sx = genera_armonia(sequence_type,tempo_type,s)
     else:
         s.insert(0, key.Key('C'))
