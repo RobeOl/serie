@@ -35,22 +35,22 @@ def spread_chord_min_third(notes, min_semitones=3):
     return chord.Chord(notes)
 
 def genera_armonia(seq_type,tipo,s):
-    note=s.notes
+    notes=s.notes
     # left hand
     left = stream.Part()
     left.insert(0, instrument.Piano())
     left.insert(0, clef.BassClef())
     # chords based on four notes
-    N = len(pippo)-1
+    N = len(s)-1
     nn = 0
     while nn<N:
-        X1 = copy.deepcopy(pippo[nn])
+        X1 = copy.deepcopy(notes[nn])
         X1.octave = 3
-        X2 = copy.deepcopy(pippo[nn+1])
+        X2 = copy.deepcopy(notes[nn+1])
         X2.octave = 3
-        X3 = copy.deepcopy(pippo[nn+2])
+        X3 = copy.deepcopy(notes[nn+2])
         X3.octave = 3
-        X4 = copy.deepcopy(pippo[nn+3])
+        X4 = copy.deepcopy(notes[nn+3])
         X4.octave = 3
         durata = X1.duration.quarterLength
         durata = durata*4
