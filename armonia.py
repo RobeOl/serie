@@ -78,6 +78,7 @@ def genera_armonia(seq_type,harmony_type,s):
             left.append(Cx)
             nn = nn+4
     elif harmony_type=="offbeat":
+        # chords based on two notes (2-4 and 1-3)
         while nn<N:
             X1 = copy.deepcopy(notes[nn])
             X1.octave = 3
@@ -98,6 +99,6 @@ def genera_armonia(seq_type,harmony_type,s):
             nn = nn+4
 
         # last note = first note
-        x = note.Note(notes[1])
-        left.append(x)
+        #x = note.Note(notes[1])
+        #left.append(x)
     return(left)
