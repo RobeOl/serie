@@ -37,7 +37,8 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
     if harmony and tempo_type=="sequence-constrained":
         left = genera_armonia(sequence_type,tempo_type,s)
         # right hand
-        right = s
+        right = stream.Part()
+        right.append(s)
         right.insert(0, instrument.Piano())
         left.insert(0, instrument.Piano())
         left.insert(0, clef.BassClef())
