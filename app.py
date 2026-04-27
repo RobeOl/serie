@@ -43,16 +43,21 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         right.insert(0, instrument.Piano())
         ts = meter.TimeSignature('4/4')
         right.insert(0, ts)
+        # calcola lunghezza pausa rigo superiore
         total_duration = right.duration.quarterLength
         measure_duration = ts.barDuration.quarterLength
         remainder = total_duration % measure_duration
-        
-        left.insert(0, instrument.Piano())
-        left.insert(0, clef.BassClef())
-
         if remainder != 0:
             missing = measure_duration - remainder
             right.append(note.Rest(quarterLength=missing))
+        
+        left.insert(0, instrument.Piano())
+        left.insert(0, clef.BassClef())
+        # calcola lunghezza pausa rigo inferiore
+        total_duration = left.duration.quarterLength
+        remainder = total_duration % measure_duration
+        if remainder != 0:
+            missing = measure_duration - remainder
             left.append(note.Rest(quarterLength=missing))
 
         # === Score (grand staff) ===
