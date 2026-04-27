@@ -52,7 +52,8 @@ def genera_armonia(seq_type,harmony_type,s):
             Cx = chord.Chord([X1,X2])
             Cx.duration.quarterLength = durata
             left.append(Cx)
-            nn = nn+2        
+            nn = nn+2 
+        left.append(note.Note(notes[1]))       
     elif seq_type=="Quaternary":
         notes=s.notes
         # left hand
