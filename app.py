@@ -33,12 +33,15 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         interval2, leap2,
         ottave, bass_clef, start_note, harmony, harmony_type)
 
-    s.insert(0, key.Key('C'))
-    s.insert(0, metadata.Metadata())
-    s.metadata.title = ""
-    s.metadata.composer = ""
+    if harmony and tipo=="sequence-constrained":
+        sx = genera_armonia(sequence_type,tempo_type,s)
+    else:
+        s.insert(0, key.Key('C'))
+        s.insert(0, metadata.Metadata())
+        s.metadata.title = ""
+        s.metadata.composer = ""
 
-    s.insert(0, instrument.Piano())
+        s.insert(0, instrument.Piano())
 
     return s
 
