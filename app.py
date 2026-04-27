@@ -35,7 +35,7 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         ottave, bass_clef, start_note, harmony, harmony_type)
 
     if harmony and (tempo_type=="sequence-constrained" or tempo_type=="constant"):
-        left = genera_armonia(sequence_type,tempo_type,s)
+        left = genera_armonia(sequence_type,harmony_type,s)
         # right hand
         right = stream.Part()
         for el in s:
