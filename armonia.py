@@ -37,26 +37,67 @@ def spread_chord_min_third(notes, min_semitones=3):
 def genera_armonia(seq_type,tipo,s):
     notes=s.notes
     # left hand
-    left = stream.Part()
-    left.insert(0, instrument.Piano())
-    left.insert(0, clef.BassClef())
-    # chords based on four notes
-    N = len(s)-1
+    N = len(notes)-1
     nn = 0
-    while nn<N:
-        X1 = copy.deepcopy(notes[nn])
-        X1.octave = 3
-        X2 = copy.deepcopy(notes[nn+1])
-        X2.octave = 3
-        X3 = copy.deepcopy(notes[nn+2])
-        X3.octave = 3
-        X4 = copy.deepcopy(notes[nn+3])
-        X4.octave = 3
-        durata = X1.duration.quarterLength
-        durata = durata*4
-        Cx = chord.Chord([X1,X2,X3,X4])
-        Cx.duration.quarterLength = durata
-        left.append(Cx)
-        nn = nn+4
- 
+    left = stream.Part()
+    if harmony_type=="classic":
+        # chords based on four notes      
+        while nn<N:
+            X1 = copy.deepcopy(notes[nn])
+            X1.octave = 3
+            X2 = copy.deepcopy(notes[nn+1])
+            X2.octave = 3
+            X3 = copy.deepcopy(notes[nn+2])
+            X3.octave = 3
+            X4 = copy.deepcopy(notes[nn+3])
+            X4.octave = 3
+            durata = X1.duration.quarterLength
+            durata = durata*4
+            Cx = chord.Chord([X1,X2,X3,X4])
+            Cx.duration.quarterLength = durata
+            left.append(Cx)
+            nn = nn+4        
+    elif harmony_type=="onbeat":
+        # chords based on two notes (1-3 and 2-4)
+        while nn<N:
+            X1 = copy.deepcopy(notes[nn])
+            X1.octave = 3
+            X2 = copy.deepcopy(notes[nn+1])
+            X2.octave = 3
+            X3 = copy.deepcopy(notes[nn+2])
+            X3.octave = 3
+            X4 = copy.deepcopy(notes[nn+3])
+            X4.octave = 3
+            durata = X1.duration.quarterLength
+            durata = durata*2
+            Cx = make_chord_with_min_third(X1, X3)
+            Cx.duration.quarterLength = durata
+            left.append(Cx)
+            Cx = make_chord_with_min_third(X2, X4)
+            Cx.duration.quarterLength = durata
+            left.append(Cx)
+            nn = nn+4
+    elif harmony_type=="offbeat":
+        while nn<N:
+            X1 = copy.deepcopy(notes[nn])
+            X1.octave = 3
+            X2 = copy.deepcopy(notes[nn+1])
+            X2.octave = 3
+            X3 = copy.deepcopy(notes[nn+2])
+            X3.octave = 3
+            X4 = copy.deepcopy(notes[nn+3])
+            X4.octave = 3
+            durata = X1.duration.quarterLength
+            durata = durata*2
+            Cx = make_chord_with_min_third(X2, X4)
+            Cx.duration.quarterLength = durata
+            left.append(Cx)
+            Cx = make_chord_with_min_third(X1, X3)
+            Cx.duration.quarterLength = durata
+            left.append(Cx)
+            nn = nn+4
+
+        # last note = first note
+        x = note.Note(notes[1])
+        left.append(x)
     return(left)
