@@ -28,6 +28,7 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
                    interval2=6, leap2=-2):
 
     s = genera_sequenza(sequence_type,tempo_type, note_length,
+        interval,leap,
         interval1, leap1,
         interval2, leap2,
         ottave, bass_clef, start_note, harmony, harmony_type)
