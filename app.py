@@ -64,6 +64,11 @@ def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type,
         melody = stream.Score()
         melody.insert(0, right)
         melody.insert(0, left)
+        melody.insert(0, key.Key('C'))
+        melody.insert(0, metadata.Metadata())
+        melody.metadata.title = ""
+        melody.metadata.composer = ""
+        melody.insert(0, instrument.Piano())
     else:
         melody = s
         ts = meter.TimeSignature('4/4')
