@@ -12,21 +12,7 @@ def f_durata(x):
     # x.duration.quarterLength = random.choice([1, 1/2, 1/4])
     x.duration.quarterLength = random.choice([1, 1/2, 1/4])
 
-def make_chord_with_min_third(A, B):
-    # calcola distanza in semitoni (melodica A → B)
-    semitones = interval.Interval(A, B).semitones
-
-    # # se inferiore a 3 semitoni (terza minore)
-    # if abs(semitones) < 3:
-    #     B = B.transpose(12)  # alza B di un'ottava
-    
-    # se inferiore a 3 semitoni (terza minore)
-    if abs(semitones) < 3:
-        A = A.transpose(-12)  # abbassa A di un'ottava
-
-    return chord.Chord([A, B])
-
-def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,harmony,harmony_type):
+def genera_senary(tipo,note_len,i,j,ii,jj,iii,jjj,ottave,bass_clef,starting_note,harmony,harmony_type):
     x = note.Note(starting_note)
 
     if starting_note <= 6:
@@ -54,8 +40,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
         seconda = note1.name
         first_couple = [prima,seconda]
 
-        # print('FIRST: ',first_couple)
-
         # first jump
         note1.transpose(j,inPlace=True)
         f_octave(note1,ottave, oct)
@@ -71,6 +55,19 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
         # second jump
         note1.transpose(jj,inPlace=True)
         f_octave(note1,ottave, oct)
+        notes.append(copy.deepcopy(note1))
+        prima = note1.name
+
+        # third interval
+        note1.transpose(iii,inPlace=True)
+        f_octave(note1,ottave, oct)
+        notes.append(copy.deepcopy(note1))
+        seconda = note1.name
+
+        # third jump
+        note1.transpose(jjj,inPlace=True)
+        f_octave(note1,ottave, oct)
+
         # change time
         f_durata(note1)
         notes.append(copy.deepcopy(note1))
@@ -101,6 +98,17 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
                 
             note1.transpose(jj,inPlace=True)
             f_octave(note1,ottave, oct)
+            notes.append(copy.deepcopy(note1))
+            prima = note1.name
+
+            note1.transpose(iii,inPlace=True)
+            f_octave(note1,ottave, oct)
+            notes.append(copy.deepcopy(note1))
+            seconda = note1.name
+                
+            note1.transpose(jjj,inPlace=True)
+            f_octave(note1,ottave, oct)
+
             # change time
             f_durata(note1)
             notes.append(copy.deepcopy(note1))
@@ -112,7 +120,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             seconda = note1.name
             current_couple = [prima,seconda]
             condition = (current_couple!=first_couple)
-            # print('CURRENT: ',current_couple)
 
     elif tipo=="length-constrained":
         # length-constrained
@@ -129,8 +136,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
         notes.append(copy.deepcopy(note1))
         seconda = note1.name
         first_couple = [prima,seconda]
-
-        # print('FIRST: ',first_couple)
 
         # first jump
         note1.transpose(j,inPlace=True)
@@ -158,6 +163,30 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
 
         # second jump
         note1.transpose(jj,inPlace=True)
+        f_octave(note1,ottave, oct)
+        if conta==note_number:
+            f_durata(note1)
+            conta=1
+        else:
+            conta = conta+1
+
+        notes.append(copy.deepcopy(note1))
+        prima = note1.name
+
+        # third interval
+        note1.transpose(iii,inPlace=True)
+        f_octave(note1,ottave, oct)
+        if conta==note_number:
+            f_durata(note1)
+            conta=1
+        else:
+            conta = conta+1
+
+        notes.append(copy.deepcopy(note1))
+        seconda = note1.name
+
+        # third jump
+        note1.transpose(jjj,inPlace=True)
         f_octave(note1,ottave, oct)
         if conta==note_number:
             f_durata(note1)
@@ -219,6 +248,28 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             notes.append(copy.deepcopy(note1))
             prima = note1.name
 
+            note1.transpose(iii,inPlace=True)
+            f_octave(note1,ottave, oct)
+            if conta==note_number:
+                f_durata(note1)
+                conta=1
+            else:
+                conta = conta+1
+
+            notes.append(copy.deepcopy(note1))
+            seconda = note1.name
+                
+            note1.transpose(jjj,inPlace=True)
+            f_octave(note1,ottave, oct)
+            if conta==note_number:
+                f_durata(note1)
+                conta=1
+            else:
+                conta = conta+1
+
+            notes.append(copy.deepcopy(note1))
+            prima = note1.name
+
             note1.transpose(i,inPlace=True)
             f_octave(note1,ottave, oct)
             if conta==note_number:
@@ -231,8 +282,7 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             seconda = note1.name
             current_couple = [prima,seconda]
             condition = (current_couple!=first_couple)
-            # print('CURRENT: ',current_couple)
-
+            
     elif tipo=="constant":
         # constant 
         x.duration.quarterLength = note_len
@@ -244,8 +294,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
         notes.append(copy.deepcopy(note1))
         seconda = note1.name
         first_couple = [prima,seconda]
-
-        # print('FIRST: ',first_couple)
 
         # first jump
         note1.transpose(j,inPlace=True)
@@ -261,6 +309,20 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
 
         # second jump
         note1.transpose(jj,inPlace=True)
+        f_octave(note1,ottave, oct)
+        # change time
+        #f_durata(note1)
+        notes.append(copy.deepcopy(note1))
+        prima = note1.name
+
+        # third interval
+        note1.transpose(iii,inPlace=True)
+        f_octave(note1,ottave, oct)
+        notes.append(copy.deepcopy(note1))
+        seconda = note1.name
+
+        # third jump
+        note1.transpose(jjj,inPlace=True)
         f_octave(note1,ottave, oct)
         # change time
         #f_durata(note1)
@@ -297,14 +359,24 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             notes.append(copy.deepcopy(note1))
             prima = note1.name
 
+            note1.transpose(iii,inPlace=True)
+            f_octave(note1,ottave, oct)
+            notes.append(copy.deepcopy(note1))
+            seconda = note1.name
+                
+            note1.transpose(jjj,inPlace=True)
+            f_octave(note1,ottave, oct)
+            # change time
+            #f_durata(note1)
+            notes.append(copy.deepcopy(note1))
+            prima = note1.name
+
             note1.transpose(i,inPlace=True)
             f_octave(note1,ottave, oct)
             notes.append(copy.deepcopy(note1))
             seconda = note1.name
             current_couple = [prima,seconda]
             condition = (current_couple!=first_couple)
-            #print('CURRENT: ',current_couple)
-
     else:
         # free 
         notes.append(copy.deepcopy(note1))
@@ -316,8 +388,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
         notes.append(copy.deepcopy(note1))
         seconda = note1.name
         first_couple = [prima,seconda]
-
-        # print('FIRST: ',first_couple)
 
         # first jump
         note1.transpose(j,inPlace=True)
@@ -335,6 +405,20 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
 
         # second jump
         note1.transpose(jj,inPlace=True)
+        f_octave(note1,ottave, oct)
+        f_durata(note1)
+        notes.append(copy.deepcopy(note1))
+        prima = note1.name
+
+        # third interval
+        note1.transpose(iii,inPlace=True)
+        f_octave(note1,ottave, oct)
+        f_durata(note1)
+        notes.append(copy.deepcopy(note1))
+        seconda = note1.name
+
+        # third jump
+        note1.transpose(jjj,inPlace=True)
         f_octave(note1,ottave, oct)
         f_durata(note1)
         notes.append(copy.deepcopy(note1))
@@ -372,6 +456,18 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             notes.append(copy.deepcopy(note1))
             prima = note1.name
 
+            note1.transpose(iii,inPlace=True)
+            f_octave(note1,ottave, oct)
+            f_durata(note1)
+            notes.append(copy.deepcopy(note1))
+            seconda = note1.name
+                
+            note1.transpose(jjj,inPlace=True)
+            f_octave(note1,ottave, oct)
+            f_durata(note1)
+            notes.append(copy.deepcopy(note1))
+            prima = note1.name
+
             note1.transpose(i,inPlace=True)
             f_octave(note1,ottave, oct)
             f_durata(note1)
@@ -379,8 +475,6 @@ def genera_quaternary(tipo,note_len,i,j,ii,jj,ottave,bass_clef,starting_note,har
             seconda = note1.name
             current_couple = [prima,seconda]
             condition = (current_couple!=first_couple)
-            #print('CURRENT: ',current_couple)
-        
 
     melody = stream.Stream()
     # remove last element
