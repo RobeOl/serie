@@ -293,7 +293,7 @@ def genera_armonia(seq_type, harmony_type, s):
 
         if harmony_type == "classic":
             # accordi su tre note (una si una no dell'esacordo)
-            while nn + 5 <= N:
+            while nn + 2 <= N:
                 X1 = copy.deepcopy(notes[nn])
                 X1.octave = 3
                 X2 = copy.deepcopy(notes[nn+1])
