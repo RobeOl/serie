@@ -63,7 +63,9 @@ def genera_armonia_coppie(s):
         nn = nn + 2
 
     # bicordo finale: ultima nota una e due ottave sotto
-    add_final_chord(left, notes, N)
+    # bicordo finale solo se le note sono in numero dispari
+    if N % 2 == 0:
+        add_final_chord(left, notes, N)
 
     # pausa per completare l'ultima battuta
     fill_to_measure(left)
