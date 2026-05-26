@@ -1,0 +1,12 @@
+[
+  {
+    "email": "mario.rossi@example.com",
+    "code": "GECO-2024-ABC",
+    "active": true
+  },
+  {
+    "email": "giulia.bianchi@example.com",
+    "code": "GECO-2024-XYZ",
+    "active": true
+  }
+]
