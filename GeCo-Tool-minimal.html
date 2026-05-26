@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>GeCo-Tool – Minimal</title>
+
+<script src="https://unpkg.com/tone"></script>
+<script src="https://unpkg.com/@tonejs/midi"></script>
+<script src="https://unpkg.com/soundfont-player/dist/soundfont-player.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay/build/opensheetmusicdisplay.min.js"></script>
+
+<style>
+  /* ── Layout generale ── */
+  body {
+    font-family: Arial, sans-serif;
+    background: #3498db;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 40px 20px;
+    box-sizing: border-box;
+  }
+
+  /* ── Pannello centrale ── */
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 36px 40px;
+    width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    text-align: center;
+  }
+
+  h1 {
+    font-size: 22px;
+    color: #2980b9;
+    margin: 0 0 24px;
+  }
+
+  h2 {
+    font-size: 16px;
+    color: #555;
+    margin: 0 0 20px;
+    font-weight: normal;
+  }
+
+  /* ── Righe etichetta + campo ── */
+  .field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+  }
+
+  .field input[type="number"] {
+    width: 70px;
+    padding: 6px 8px;
+    border: 1px solid #aed6f1;
+    border-radius: 6px;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  /* Campi di testo per login/registrazione */
+  .text-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #aed6f1;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+  }
+
+  .text-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52,152,219,0.2);
+  }
+
+  /* ── Pulsanti ── */
+  .btn {
+    width: 100%;
+    padding: 11px;
+    margin-top: 6px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    color: white;
+    transition: opacity 0.15s;
+  }
+
+  .btn:hover   { opacity: 0.88; }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: #aaa !important;
+  }
+
+  #btnGenerate  { background: #3498db; }
+  #btnPlay      { background: #27ae60; }
+  #btnLogin     { background: #3498db; margin-top: 12px; }
+  #btnRegister  { background: #27ae60; }
+  #btnLogout {
+    background: none;
+    color: #999;
+    font-size: 12px;
+    font-weight: normal;
+    width: auto;
+    padding: 4px 8px;
+    margin-top: 16px;
+    text-decoration: underline;
+    cursor: pointer;
+    border: none;
+  }
+
+  /* ── Messaggi di stato ── */
+  #status {
+    margin-top: 16px;
+    font-size: 13px;
+    color: #555;
+    min-height: 18px;
+  }
+
+  #authStatus {
+    margin-top: 12px;
+    font-size: 13px;
+    min-height: 18px;
+  }
+
+  .auth-error   { color: #e74c3c; }
+  .auth-success { color: #27ae60; }
+
+  /* ── Separatore tab login/registrazione ── */
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid #eee;
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 8px 0;
+    cursor: pointer;
+    font-size: 14px;
+    color: #999;
+    background: none;
+    border: none;
+    font-weight: bold;
+    transition: color 0.15s;
+  }
+
+  .tab.active {
+    color: #2980b9;
+    border-bottom: 2px solid #2980b9;
+    margin-bottom: -2px;
+  }
+
+  /* ── Testo piccolo ── */
+  .hint {
+    font-size: 12px;
+    color: #aaa;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  /* ── Email utente loggato ── */
+  #userLabel {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 8px;
+  }
+
+  /* ── Schermate ── */
+  #screenAuth { display: flex; }
+  #screenApp  { display: none; }
+</style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCHERMATA 1: AUTENTICAZIONE
+     Mostrata al primo accesso o dopo logout / token scaduto.
+══════════════════════════════════════════════════════════════════════ -->
+<div class="card" id="screenAuth">
+  <h1>GeCo-Tool</h1>
+
+  <div class="tabs">
+    <button class="tab active" id="tabLogin"    onclick="switchTab('login')">Accedi</button>
+    <button class="tab"        id="tabRegister" onclick="switchTab('register')">Registrati</button>
+  </div>
+
+  <!-- Tab LOGIN -->
+  <div id="panelLogin">
+    <input class="text-input" type="email"  id="loginEmail" placeholder="Email">
+    <input class="text-input" type="text"   id="loginCode"  placeholder="Codice di accesso" autocomplete="off">
+    <button class="btn" id="btnLogin" onclick="doLogin()">Accedi</button>
+    <div id="authStatus"></div>
+    <p class="hint">Non hai ancora un codice? Registrati e attendi la conferma.</p>
+  </div>
+
+  <!-- Tab REGISTRAZIONE -->
+  <div id="panelRegister" style="display:none">
+    <input class="text-input" type="email" id="regEmail" placeholder="La tua email">
+    <button class="btn" id="btnRegister" onclick="doRegister()">Richiedi accesso</button>
+    <div id="regStatus"></div>
+    <p class="hint">
+      Dopo la registrazione riceverai via email un codice personale da inserire nella scheda "Accedi".
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCHERMATA 2: APPLICAZIONE  (visibile solo se autenticati)
+══════════════════════════════════════════════════════════════════════ -->
+<div class="card" id="screenApp">
+  <h1>GeCo-Tool</h1>
+  <div id="userLabel"></div>
+
+  <div class="field">
+    <label for="interval">Interval</label>
+    <input type="number" id="interval" value="3">
+  </div>
+
+  <div class="field">
+    <label for="leap">Leap</label>
+    <input type="number" id="leap" value="-1">
+  </div>
+
+  <button class="btn" id="btnGenerate" onclick="generateSequence()">Generate</button>
+  <button class="btn" id="btnPlay"     onclick="playSequence()" disabled>Play</button>
+
+  <div id="status">Imposta Interval e Leap, poi premi Generate.</div>
+
+  <button id="btnLogout" onclick="doLogout()">Esci</button>
+</div>
+
+<!-- Spartito musicale -->
+<div id="score" style="width:90%; max-width:1000px; margin-top:24px; background:white; border-radius:10px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,0.2); display:none;"></div>
+
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  CONFIGURAZIONE
+// ════════════════════════════════════════════════════════════════════════════
+
+// Cambia solo questa riga per passare da locale a produzione
+// const ENV = "local"   // cambia in "remote" per produzione
+const ENV = "remote"   // cambia in "local" per sviluppo locale
+const BASE_URL = ENV === "local" ? "http://localhost:5000" : "https://serie.onrender.com"
+let serverAwake = ENV === "local"
+
+// Chiave per localStorage
+const TOKEN_KEY = "geco_token"
+const EMAIL_KEY = "geco_email"
+
+// ════════════════════════════════════════════════════════════════════════════
+//  STATO GLOBALE
+// ════════════════════════════════════════════════════════════════════════════
+
+let midiData = null
+let synth    = null
+let part     = null
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  HELPERS UI
+// ════════════════════════════════════════════════════════════════════════════
+
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg
+}
+
+function setAuthStatus(msg, isError = false) {
+  const el = document.getElementById("authStatus")
+  el.textContent = msg
+  el.className = isError ? "auth-error" : "auth-success"
+}
+
+function setRegStatus(msg, isError = false) {
+  const el = document.getElementById("regStatus")
+  el.textContent = msg
+  el.className = isError ? "auth-error" : "auth-success"
+}
+
+function switchTab(tab) {
+  const isLogin = tab === "login"
+  document.getElementById("panelLogin").style.display    = isLogin ? "block" : "none"
+  document.getElementById("panelRegister").style.display = isLogin ? "none"  : "block"
+  document.getElementById("tabLogin").classList.toggle("active", isLogin)
+  document.getElementById("tabRegister").classList.toggle("active", !isLogin)
+  document.getElementById("authStatus").textContent = ""
+  document.getElementById("regStatus").textContent  = ""
+}
+
+function showApp(email) {
+  document.getElementById("screenAuth").style.display = "none"
+  document.getElementById("screenApp").style.display  = "flex"
+  document.getElementById("score").style.display      = "block"
+  document.getElementById("userLabel").textContent    = email
+}
+
+function showAuth() {
+  document.getElementById("screenAuth").style.display = "flex"
+  document.getElementById("screenApp").style.display  = "none"
+  document.getElementById("score").style.display      = "none"
+  // Pulisce i campi
+  document.getElementById("loginEmail").value = ""
+  document.getElementById("loginCode").value  = ""
+  document.getElementById("authStatus").textContent = ""
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AUTENTICAZIONE
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Legge il token da localStorage e controlla se è ancora valido
+ * (decodifica il payload JWT senza verificare la firma — la verifica vera
+ * avviene sul server ad ogni richiesta).
+ */
+function getStoredToken() {
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (!token) return null
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]))
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(EMAIL_KEY)
+      return null
+    }
+    return token
+  } catch {
+    return null
+  }
+}
+
+/** Aggiunge l'header Authorization a ogni chiamata protetta. */
+function authHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + localStorage.getItem(TOKEN_KEY)
+  }
+}
+
+async function doRegister() {
+  const email = document.getElementById("regEmail").value.trim().toLowerCase()
+  if (!email || !email.includes("@")) {
+    setRegStatus("Inserisci un'email valida.", true)
+    return
+  }
+
+  document.getElementById("btnRegister").disabled = true
+  setRegStatus("Invio in corso…")
+
+  try {
+    const res  = await fetch(`${BASE_URL}/register`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email })
+    })
+    const data = await res.json()
+
+    if (res.ok) {
+      setRegStatus("✅ Richiesta inviata! Riceverai il codice via email.")
+    } else {
+      setRegStatus(data.error || "Errore durante la registrazione.", true)
+    }
+  } catch {
+    setRegStatus("❌ Impossibile raggiungere il server.", true)
+  } finally {
+    document.getElementById("btnRegister").disabled = false
+  }
+}
+
+async function doLogin() {
+  const email = document.getElementById("loginEmail").value.trim().toLowerCase()
+  const code  = document.getElementById("loginCode").value.trim().toUpperCase()
+
+  if (!email || !code) {
+    setAuthStatus("Inserisci email e codice.", true)
+    return
+  }
+
+  document.getElementById("btnLogin").disabled = true
+  setAuthStatus("Verifica in corso…")
+
+  try {
+    const res  = await fetch(`${BASE_URL}/verify`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email, code })
+    })
+    const data = await res.json()
+
+    if (res.ok && data.token) {
+      localStorage.setItem(TOKEN_KEY, data.token)
+      localStorage.setItem(EMAIL_KEY, email)
+      showApp(email)
+    } else {
+      setAuthStatus(data.error || "Credenziali non valide.", true)
+    }
+  } catch {
+    setAuthStatus("❌ Impossibile raggiungere il server.", true)
+  } finally {
+    document.getElementById("btnLogin").disabled = false
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(EMAIL_KEY)
+  midiData = null
+  showAuth()
+}
+
+/**
+ * Gestisce le risposte 401/403 dai chiamanti protetti:
+ * se il token è scaduto mostra di nuovo la schermata di login.
+ */
+function handleAuthError(status) {
+  if (status === 401 || status === 403) {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(EMAIL_KEY)
+    showAuth()
+    setAuthStatus("Sessione scaduta. Accedi di nuovo.", true)
+    return true
+  }
+  return false
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  FUNZIONI PRINCIPALI (identiche a prima, aggiunto authHeaders)
+// ════════════════════════════════════════════════════════════════════════════
+
+async function generateSequence() {
+  const interval = parseInt(document.getElementById("interval").value)
+  const leap     = parseInt(document.getElementById("leap").value)
+
+  const params = {
+    start_note:     0,
+    sequence_type:  "Binary",
+    interval:       interval,
+    leap:           leap,
+    tempo:          "constant",
+    note_length:    0.5,
+    harmony:        false,
+    harmony_type:   null,
+    octave:         2,
+    bass_clef:      false,
+    bpm:            120
+  }
+
+  if (!serverAwake) {
+    alert("⏳ The server is still starting up")
+    return
+  }
+
+  document.getElementById("btnGenerate").disabled = true
+  document.getElementById("btnPlay").disabled     = true
+  setStatus("⏳ Generating…")
+
+  try {
+    const response = await fetch(`${BASE_URL}/generate`, {
+      method:  "POST",
+      headers: authHeaders(),
+      body:    JSON.stringify(params)
+    })
+
+    if (handleAuthError(response.status)) return
+
+    const midiBlob   = await response.blob()
+    const midiBuffer = await midiBlob.arrayBuffer()
+    midiData = new Midi(midiBuffer)
+
+    const scoreRes = await fetch(`${BASE_URL}/score`, {
+      method:  "POST",
+      headers: authHeaders()
+    })
+    if (!handleAuthError(scoreRes.status)) {
+      const scoreBlob = await scoreRes.blob()
+      const scoreUrl  = URL.createObjectURL(scoreBlob)
+      await osmd.load(scoreUrl)
+      osmd.render()
+    }
+
+    document.getElementById("btnPlay").disabled = false
+    setStatus("✅ Sequenza pronta. Premi Play.")
+
+  } catch (err) {
+    console.error("Errore generate:", err)
+    setStatus("❌ Errore durante la generazione. Il server è in esecuzione?")
+  } finally {
+    document.getElementById("btnGenerate").disabled = false
+  }
+}
+
+async function playSequence() {
+  if (!midiData) return
+
+  await Tone.start()
+  Tone.Transport.stop()
+  Tone.Transport.cancel()
+  if (part) { part.stop(); part.dispose(); part = null }
+
+  const currentBPM = 120
+  const baseBPM    = 120
+  const scale      = baseBPM / currentBPM
+
+  Tone.Transport.bpm.value = currentBPM
+
+  const audioContext = Tone.getContext().rawContext
+  synth = await Soundfont.instrument(audioContext, "acoustic_grand_piano")
+
+  setStatus("▶️ Playing…")
+
+  let events = []
+  midiData.tracks.forEach(track => {
+    track.notes.forEach(note => {
+      events.push({
+        time:     note.time     * scale,
+        note:     note.name,
+        duration: note.duration * scale,
+        velocity: note.velocity
+      })
+    })
+  })
+
+  part = new Tone.Part((time, value) => {
+    synth.play(value.note, time, { duration: value.duration, gain: value.velocity })
+  }, events)
+
+  part.start(0)
+  Tone.Transport.start()
+
+  const totalDuration = events.reduce((max, ev) => Math.max(max, ev.time + ev.duration), 0)
+  setTimeout(() => {
+    setStatus("✅ Riproduzione terminata. Premi Play per riascoltare.")
+  }, (totalDuration + 0.5) * 1000)
+}
+
+async function checkServer() {
+  if (ENV === "local") return
+  try {
+    const res = await fetch(`${BASE_URL}/health`)
+    if (res.ok) {
+      serverAwake = true
+    } else {
+      setTimeout(checkServer, 3000)
+    }
+  } catch {
+    setTimeout(checkServer, 3000)
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════════════════
+
+checkServer()
+
+const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(
+  document.getElementById("score")
+)
+osmd.setOptions({ drawPartNames: false, drawPartAbbreviations: false })
+
+// Controlla se c'è già un token valido → salta la schermata di login
+;(function init() {
+  const token = getStoredToken()
+  const email = localStorage.getItem(EMAIL_KEY)
+  if (token && email) {
+    showApp(email)
+  } else {
+    showAuth()
+  }
+})()
+
+</script>
+</body>
+</html>

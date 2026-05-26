@@ -1,905 +1,415 @@
-from flask import Flask, send_file, request
-from flask_cors import CORS
-from music21 import *
-import tempfile
-import os
-from sequenza import genera_sequenza
-from armonia import genera_armonia, genera_armonia_per_misura, genera_armonia_coppie
-import copy
-from centra import centra_stream
+# ════════════════════════════════════════════════════════════════════════════
+#  app.py  —  Backend Flask per GeCo-Tool con autenticazione e logging
+#
+#  Endpoint pubblici:
+#    POST /register      → registra email, crea codice in attesa
+#    POST /verify        → verifica codice, restituisce JWT
+#    GET  /health        → check disponibilità server
+#
+#  Endpoint protetti (richiedono JWT valido):
+#    POST /generate      → genera sequenza MIDI
+#    POST /score         → restituisce MusicXML
+#
+#  Endpoint admin (richiedono header X-Admin-Key):
+#    GET  /admin/users   → lista utenti registrati
+#    GET  /admin/stats   → accessi per utente e per endpoint
+#    POST /admin/activate  → attiva un utente fornendo il codice
+#    DELETE /admin/user  → elimina un utente
+#
+#  Dipendenze:  flask  flask-cors  music21  PyJWT
+#  Installa con:  pip install flask flask-cors music21 PyJWT
+# ════════════════════════════════════════════════════════════════════════════
 
+import os
+import sqlite3
+import secrets
+import copy
+import tempfile
+import datetime
+
+from flask import Flask, send_file, request, jsonify, g
+from flask_cors import CORS
+from music21 import stream, note, clef, meter, key, metadata, instrument
+import jwt
+
+from binary import genera_binary
+
+
+# ── Configurazione ───────────────────────────────────────────────────────────
+
+# Cambia queste due costanti nelle variabili d'ambiente di Render:
+#   JWT_SECRET  → stringa casuale lunga (es. genera con: python -c "import secrets; print(secrets.token_hex(32))")
+#   ADMIN_KEY   → password per accedere agli endpoint /admin/*
+JWT_SECRET = os.environ.get("JWT_SECRET", "cambia-questo-segreto-in-produzione")
+ADMIN_KEY  = os.environ.get("ADMIN_KEY",  "admin-password-da-cambiare")
+JWT_EXP_DAYS = 30   # il token JWT scade dopo N giorni
+
+DB_PATH = os.environ.get("DB_PATH", "geco.db")
+
+
+# ── Stato globale ────────────────────────────────────────────────────────────
+last_stream = None
+
+# ── Inizializzazione Flask ───────────────────────────────────────────────────
 app = Flask(__name__)
 
 CORS(app, origins=[
     "http://localhost:5000",
     "http://localhost:8000",
     "http://127.0.0.1:5000",
-    "null",  # ← per file aperti da file:// nel browser
+    "null",
     "https://murosigma.it",
     "https://www.murosigma.it",
     "https://marcobittelli.it",
     "https://www.marcobittelli.it"
 ])
 
-# 🔹 CACHE GLOBALE
-last_stream = None
-last_params = None
-access_count = 0
 
-def generate_music(start_note, sequence_type, tempo_type, harmony, harmony_type, ottave, bass_clef, bpm=100,
-                   note_length=1,
-                   interval=3, leap=-1,
-                   interval1=3, leap1=3,
-                   interval2=6, leap2=-2,
-                   int1=1,lea1=3,int2=-2,lea2=5,int3=3,lea3=-7,
-                   inter1=3, inter2=3, inter3=6):
+# ════════════════════════════════════════════════════════════════════════════
+#  DATABASE  (SQLite — file locale, persiste sul disco di Render se si usa
+#  un Persistent Disk; altrimenti si azzera ad ogni deploy → valuta PostgreSQL
+#  per produzione seria)
+# ════════════════════════════════════════════════════════════════════════════
 
-    s = genera_sequenza(sequence_type,tempo_type, note_length,
-        interval,leap,
-        interval1, leap1,
-        interval2, leap2,
-        int1, lea1, int2, lea2, int3, lea3,
-        inter1,inter2,inter3,
-        ottave, bass_clef, start_note, harmony, harmony_type)
+def get_db():
+    """Restituisce la connessione SQLite per la richiesta corrente."""
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
-    if harmony and (tempo_type in ("sequence-constrained", "constant", "length-constrained", "free")):
-        if tempo_type in ("sequence-constrained", "constant"):
-            left = genera_armonia(sequence_type, harmony_type, s)
-        else:
-            left = genera_armonia_coppie(s)
-        # right hand
-        right = stream.Part()
-        for el in s:
-            right.append(el)
-        right.insert(0, instrument.Piano())
-        ts = meter.TimeSignature('4/4')
-        right.insert(0, ts)
-        right.insert(0, clef.TrebleClef())
-        # calcola lunghezza pausa rigo superiore
-        total_duration = right.duration.quarterLength
-        measure_duration = ts.barDuration.quarterLength
-        remainder = total_duration % measure_duration
-        if remainder != 0:
-            missing = measure_duration - remainder
-            right.append(note.Rest(quarterLength=missing))
+@app.teardown_appcontext
+def close_db(exc):
+    db = g.pop("db", None)
+    if db:
+        db.close()
 
-        left.insert(0, instrument.Piano())
-        left.insert(0, clef.BassClef())
-        # calcola lunghezza pausa rigo inferiore
-        total_duration = left.duration.quarterLength
-        remainder = total_duration % measure_duration
-        if remainder != 0:
-            missing = measure_duration - remainder
-            left.append(note.Rest(quarterLength=missing))
+def init_db():
+    """Crea le tabelle se non esistono."""
+    with app.app_context():
+        db = get_db()
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                email      TEXT    NOT NULL UNIQUE,
+                code       TEXT    NOT NULL,
+                active     INTEGER NOT NULL DEFAULT 0,   -- 0 = in attesa, 1 = attivato
+                created_at TEXT    NOT NULL
+            );
 
-        # === Score (grand staff) ===
-        melody = stream.Score()
-        melody.insert(0, right)
-        melody.insert(0, left)
-        melody.insert(0, key.Key('C'))
-        melody.insert(0, metadata.Metadata())
-        melody.metadata.title = ""
-        melody.metadata.composer = ""
-        melody.insert(0, instrument.Piano())
-    else:
-        melody = s
-        ts = meter.TimeSignature('4/4')
-        melody.insert(0, ts)
-        total_duration = melody.duration.quarterLength
-        measure_duration = ts.barDuration.quarterLength
-        remainder = total_duration % measure_duration
-        if remainder != 0:
-            missing = measure_duration - remainder
-            melody.append(note.Rest(quarterLength=missing))
-        melody.insert(0, key.Key('C'))
-        melody.insert(0, metadata.Metadata())
-        melody.metadata.title = ""
-        melody.metadata.composer = ""
-        melody.insert(0, instrument.Piano())
+            CREATE TABLE IF NOT EXISTS access_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                email      TEXT    NOT NULL,
+                endpoint   TEXT    NOT NULL,
+                ts         TEXT    NOT NULL
+            );
+        """)
+        db.commit()
 
+init_db()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  HELPERS
+# ════════════════════════════════════════════════════════════════════════════
+
+def require_auth(f):
+    """
+    Decoratore: verifica il token JWT nell'header Authorization.
+    Inietta request.user_email se valido, altrimenti restituisce 401.
+    """
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return jsonify({"error": "Token mancante"}), 401
+        token = auth[7:]
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token scaduto"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Token non valido"}), 401
+
+        # Controlla che l'utente sia ancora attivo nel DB
+        db = get_db()
+        user = db.execute("SELECT active FROM users WHERE email=?", (payload["email"],)).fetchone()
+        if not user or not user["active"]:
+            return jsonify({"error": "Utente non autorizzato"}), 403
+
+        request.user_email = payload["email"]
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_admin(f):
+    """Decoratore: verifica l'header X-Admin-Key."""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+            return jsonify({"error": "Non autorizzato"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def log_access(email, endpoint):
+    """Scrive una riga nella tabella access_log."""
+    db = get_db()
+    db.execute(
+        "INSERT INTO access_log (email, endpoint, ts) VALUES (?, ?, ?)",
+        (email, endpoint, datetime.datetime.utcnow().isoformat())
+    )
+    db.commit()
+
+
+def build_score(melody):
+    ts = meter.TimeSignature('4/4')
+    melody.insert(0, ts)
+    total     = melody.duration.quarterLength
+    remainder = total % ts.barDuration.quarterLength
+    if remainder != 0:
+        melody.append(note.Rest(quarterLength=ts.barDuration.quarterLength - remainder))
+    melody.insert(0, key.Key('C'))
+    melody.insert(0, instrument.Piano())
+    melody.insert(0, metadata.Metadata())
+    melody.metadata.title    = ""
+    melody.metadata.composer = ""
     return melody
 
-def invert_stream(s):
-    inverted = stream.Part()
 
-    prev_pitch = None
-    last_new_pitch = None
-
-    for el in s.recurse():
-        if isinstance(el, note.Note):
-            if prev_pitch is None:
-                new_note = note.Note(el.pitch, quarterLength=el.quarterLength)
-                last_new_pitch = el.pitch.midi
-            else:
-                interval = el.pitch.midi - prev_pitch
-                inv_interval = -interval
-                new_pitch = last_new_pitch + inv_interval
-
-                while abs(new_pitch - last_new_pitch) > 6:
-                    if new_pitch < last_new_pitch:
-                        new_pitch += 12
-                    else:
-                        new_pitch -= 12
-
-                new_note = note.Note()
-                new_note.pitch.midi = new_pitch
-                new_note.quarterLength = el.quarterLength
-
-                last_new_pitch = new_pitch
-
-            prev_pitch = el.pitch.midi
-            inverted.append(new_note)
-
-        elif isinstance(el, note.Rest):
-            inverted.append(note.Rest(quarterLength=el.quarterLength))
-
-    return inverted
-
-def retrograde_stream(s):
-    new_stream = s.__class__()
-
-    # # DEBUG input
-    # input_names = [el.nameWithOctave for el in s.flat.notesAndRests if isinstance(el, note.Note)]
-    # print("[retrograde_stream INPUT]", input_names)
- 
-    elements = list(s.flat.notesAndRests)
- 
-    if not elements:
-        return new_stream
- 
-    # separa la pausa finale di riempimento (se presente)
-    final_rest = None
-    if isinstance(elements[-1], note.Rest):
-        final_rest = elements[-1]
-        elements = elements[:-1]
-    
-    # # escludi anche l'ultima nota (sempre uguale alla prima)
-    # last_note = elements[-1]
-    # elements = elements[:-1]
- 
-    # inverti ordine degli elementi musicali (senza la pausa finale)
-    elements.reverse()
- 
-    offset = 0
-    for el in elements:
-        new_el = copy.deepcopy(el)
-        new_stream.insert(offset, new_el)
-        offset += new_el.duration.quarterLength
-
-    #  # reinserisci l'ultima nota invariata
-    # new_stream.insert(offset, copy.deepcopy(last_note))
-    # offset += last_note.duration.quarterLength
- 
-    # riaggiungi la pausa finale invariata in coda
-    if final_rest is not None:
-        new_stream.insert(offset, copy.deepcopy(final_rest))
-
-    # # DEBUG
-    # output_names = [el.nameWithOctave for el in new_stream.recurse() if isinstance(el, note.Note)]
-    # print("[retrograde_stream OUTPUT]", output_names)
-
-    return new_stream
-
-
-def flatten_to_part(s):
-    # Riduce qualsiasi stream/part/score a una Part pulita con solo note e pause.
-    flat = stream.Part()
-    for el in s.flatten().notesAndRests:
-        flat.append(copy.deepcopy(el))
-    return flat
-
-def shift_part(part):
-    flat = stream.Part()
-    for el in part.flatten().notesAndRests:
-        flat.append(copy.deepcopy(el))
-
-    elements = list(flat.notesAndRests)
-
-    if not elements:
-        return flat
-
-    # separa ultima pausa se è finale
-    last = elements[-1]
-    final_rest = None
-
-    if isinstance(last, note.Rest):
-        final_rest = last
-        core_elements = elements[:-1]
-    else:
-        core_elements = elements
-
-    # escludi anche l'ultima nota (sempre uguale alla prima)
-    last_note = core_elements[-1]
-    core_elements = core_elements[:-1]
-
-    if not core_elements:
-        return flat
-
-    # durate SOLO degli elementi musicali
-    durations = [el.duration.quarterLength for el in core_elements]
-
-    # shift circolare: la durata di ogni nota va alla successiva,
-    # e la durata dell'ultima va alla prima
-    # shift di 1
-    #shifted_durations = [durations[-1]] + durations[:-1]
-
-    # shift di 2
-    shifted_durations = durations[-2:] + durations[:-2]
-    
-    # ricostruzione con i nuovi offset
-    new_part = stream.Part()
-    offset = 0
-
-    for el, new_dur in zip(core_elements, shifted_durations):
-        new_el = copy.deepcopy(el)
-        new_el.duration.quarterLength = new_dur
-        new_part.insert(offset, new_el)
-        offset += new_dur
-
-    # reinserisci l'ultima nota invariata
-    new_part.insert(offset, copy.deepcopy(last_note))
-    offset += last_note.duration.quarterLength
-
-     # ricrea pausa finale corretta
-    if final_rest is not None:
-        new_part.insert(offset, copy.deepcopy(final_rest))
-
-    return new_part
-
-def minus_shift_part(part):
-    flat = stream.Part()
-    for el in part.flatten().notesAndRests:
-        flat.append(copy.deepcopy(el))
-
-    elements = list(flat.notesAndRests)
-
-    if not elements:
-        return flat
-
-    # separa ultima pausa se è finale
-    last = elements[-1]
-    final_rest = None
-
-    if isinstance(last, note.Rest):
-        final_rest = last
-        core_elements = elements[:-1]
-    else:
-        core_elements = elements
-
-    # escludi anche l'ultima nota (sempre uguale alla prima)
-    last_note = core_elements[-1]
-    core_elements = core_elements[:-1]
-
-    if not core_elements:
-        return flat
-
-    # durate SOLO degli elementi musicali
-    durations = [el.duration.quarterLength for el in core_elements]
-
-    # shift circolare: la durata di ogni nota va alla successiva,
-    # e la durata dell'ultima va alla prima
-    # shift di 1
-    #shifted_durations = [durations[1]] + durations[:1]
-
-    # shift di 2
-    shifted_durations = durations[2:] + durations[:2]
-    
-    # ricostruzione con i nuovi offset
-    new_part = stream.Part()
-    offset = 0
-
-    for el, new_dur in zip(core_elements, shifted_durations):
-        new_el = copy.deepcopy(el)
-        new_el.duration.quarterLength = new_dur
-        new_part.insert(offset, new_el)
-        offset += new_dur
-
-    # reinserisci l'ultima nota invariata
-    new_part.insert(offset, copy.deepcopy(last_note))
-    offset += last_note.duration.quarterLength
-
-     # ricrea pausa finale corretta
-    if final_rest is not None:
-        new_part.insert(offset, copy.deepcopy(final_rest))
-
-    return new_part
-
-def fill_to_measure(seq, beats_per_measure=4):
-    # Aggiunge una pausa finale per completare l'ultima battuta.
-    total = sum(el.duration.quarterLength for el in seq.notesAndRests)
-    position_in_measure = total % beats_per_measure
-    if position_in_measure > 0:
-        remainder = beats_per_measure - position_in_measure
-        r = note.Rest()
-        r.duration.quarterLength = remainder
-        seq.append(r)
-
-# inversione ritmica
-def invert_part_ranking(part):
-    flat = stream.Part()
-    for el in part.flatten().notesAndRests:
-        flat.append(copy.deepcopy(el))
-
-    elements = list(flat.notesAndRests)
-
-    if not elements:
-        return flat
-
-    # separa ultima pausa se è finale
-    last = elements[-1]
-    final_rest = None
-
-    if isinstance(last, note.Rest):
-        final_rest = last
-        core_elements = elements[:-1]
-    else:
-        core_elements = elements
-
-    if not core_elements:
-        return flat
-
-    # durate SOLO degli elementi musicali
-    durations = [el.duration.quarterLength for el in core_elements]
-
-    # escludi anche l'ultima nota (sempre uguale alla prima)
-    last_note = core_elements[-1]
-    core_elements = core_elements[:-1]
-    durations = durations[:-1]
-
-    if not core_elements:
-        return flat
-
-    sorted_unique = sorted(set(durations))
-    rank_map = {d: i for i, d in enumerate(sorted_unique)}
-    max_rank = len(sorted_unique) - 1
-
-    inverted_map = {
-        d: sorted_unique[max_rank - rank_map[d]]
-        for d in sorted_unique
-    }
-
-    # ricostruzione con nuovi offset
-    new_part = stream.Part()
-    offset = 0
-
-    for el in core_elements:
-        new_el = copy.deepcopy(el)
-        d = new_el.duration.quarterLength
-        new_el.duration.quarterLength = inverted_map[d]
-        new_part.insert(offset, new_el)
-        offset += new_el.duration.quarterLength
-
-    # reinserisci l'ultima nota invariata
-    new_part.insert(offset, copy.deepcopy(last_note))
-    offset += last_note.duration.quarterLength
-
-    # ricrea pausa finale
-    # if final_rest is not None:
-    #     new_part.insert(offset, copy.deepcopy(final_rest))
-
-    # pausa per completare l'ultima battuta
-    fill_to_measure(new_part)
-
-    return new_part
-
-
-def retrograde_rhythm_part(part):
-    flat = stream.Part()
-    for el in part.flatten().notesAndRests:
-        flat.append(copy.deepcopy(el))
-
-    elements = list(flat.notesAndRests)
-
-    if not elements:
-        return flat
-
-    # separa ultima pausa finale
-    last = elements[-1]
-    final_rest = None
-
-    if isinstance(last, note.Rest):
-        final_rest = last
-        core_elements = elements[:-1]
-    else:
-        core_elements = elements
-
-    if not core_elements:
-        return flat
-
-    # escludi anche l'ultima nota (sempre uguale alla prima)
-    last_note = core_elements[-1]
-    core_elements = core_elements[:-1]
-
-    if not core_elements:
-        return flat
-
-    # retrogradazione: inversione dell'ordine delle durate
-    durations = [el.duration.quarterLength for el in core_elements]
-    durations.reverse()
-
-    # ricostruzione
-    new_part = stream.Part()
-    offset = 0
-
-    for el, new_dur in zip(core_elements, durations):
-        new_el = copy.deepcopy(el)
-        new_el.duration.quarterLength = new_dur
-        new_part.insert(offset, new_el)
-        offset += new_dur
-
-    # reinserisci l'ultima nota invariata
-    new_part.insert(offset, copy.deepcopy(last_note))
-    offset += last_note.duration.quarterLength
-
-    # ricrea pausa finale
-    if final_rest is not None:
-        new_part.insert(offset, copy.deepcopy(final_rest))
-
-    return new_part
-
-
-@app.route("/generate", methods=["POST"])
-def generate_midi():
-    global last_stream
-    global last_params
-
-    data = request.json
-
-    s = generate_music(
-        data.get("start_note"),
-        data.get("sequence_type"),
-        data.get("tempo"),
-        data.get("harmony"),
-        data.get("harmony_type"),
-        data.get("octave", 1),
-        data.get("bass_clef"),
-        data.get("bpm", 100),
-        float(data.get("note_length", 1)),
-        data.get("interval", 0),
-        data.get("leap", 0),
-        data.get("interval1", 0),
-        data.get("leap1", 0),
-        data.get("interval2", 0),
-        data.get("leap2", 0),
-        data.get("int1", 0),
-        data.get("lea1", 0),
-        data.get("int2", 0),
-        data.get("lea2", 0),
-        data.get("int3", 0),
-        data.get("lea3", 0),
-        data.get("inter1", 0),
-        data.get("inter2", 0),
-        data.get("inter3", 0)
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT PUBBLICI
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/register", methods=["POST"])
+def register():
+    """
+    Riceve {"email": "..."}.
+    Crea il record utente con un codice casuale a 8 caratteri.
+    L'utente NON è ancora attivo: devi attivarlo via /admin/activate.
+    Restituisce il codice così che tu possa inviarlo manualmente all'utente.
+    """
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"error": "Email non valida"}), 400
+
+    db   = get_db()
+    existing = db.execute("SELECT id, active FROM users WHERE email=?", (email,)).fetchone()
+
+    if existing:
+        if existing["active"]:
+            return jsonify({"error": "Email già registrata e attiva"}), 409
+        else:
+            # Rigenera il codice se era in attesa
+            code = secrets.token_hex(4).upper()   # es. "A3F7B2C1"
+            db.execute("UPDATE users SET code=? WHERE email=?", (code, email))
+            db.commit()
+            return jsonify({
+                "message": "Registrazione aggiornata. In attesa di attivazione.",
+                "code":    code   # mostrato solo in questa risposta — salvalo tu
+            }), 200
+
+    code = secrets.token_hex(4).upper()
+    db.execute(
+        "INSERT INTO users (email, code, active, created_at) VALUES (?, ?, 0, ?)",
+        (email, code, datetime.datetime.utcnow().isoformat())
     )
+    db.commit()
+
+    # Il codice viene restituito nella risposta JSON (visibile solo a te via curl/Postman)
+    # In alternativa puoi integrare un servizio email (SendGrid, Mailgun, ecc.)
+    return jsonify({
+        "message": "Registrazione ricevuta. In attesa di attivazione da parte dell'amministratore.",
+        "code":    code   # ← invia questo codice all'utente via email manualmente
+    }), 201
+
+
+@app.route("/verify", methods=["POST"])
+def verify():
+    """
+    Riceve {"email": "...", "code": "..."}.
+    Se email+codice sono corretti e l'utente è attivo → restituisce JWT.
+    """
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    code  = (data.get("code")  or "").strip().upper()
+
+    if not email or not code:
+        return jsonify({"error": "Email e codice sono obbligatori"}), 400
+
+    db   = get_db()
+    user = db.execute(
+        "SELECT active, code FROM users WHERE email=?", (email,)
+    ).fetchone()
+
+    if not user:
+        return jsonify({"error": "Email non trovata"}), 404
+    if user["code"] != code:
+        return jsonify({"error": "Codice non corretto"}), 401
+    if not user["active"]:
+        return jsonify({"error": "Account non ancora attivato. Attendi la conferma."}), 403
+
+    # Genera il JWT
+    payload = {
+        "email": email,
+        "exp":   datetime.datetime.utcnow() + datetime.timedelta(days=JWT_EXP_DAYS)
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+    log_access(email, "verify/login")
+    return jsonify({"token": token}), 200
 
-    # salva la sequenza reale (fondamentale)
-    last_stream = copy.deepcopy(s)
-    # salva ultimi parametri
-    last_params = data
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
-    s.write('midi', fp=tmp.name)
-
-    return send_file(tmp.name, mimetype="audio/midi")
-
-
-@app.route("/score", methods=["POST"])
-def generate_score():
-    global last_stream
-
-    if last_stream is None:
-        return {"error": "No sequence generated yet"}, 400
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False)
-    last_stream.write('musicxml', fp=tmp.name)
-
-    return send_file(tmp.name, mimetype="application/xml")
-
-def rigenera_armonia(melody):
-    tempo_type = last_params.get("tempo")
-    if tempo_type in ("sequence-constrained", "constant"):
-        return genera_armonia(
-            last_params.get("sequence_type"),
-            last_params.get("harmony_type"),
-            melody
-        )
-    else:
-        return genera_armonia_coppie(melody)
-
-@app.route("/transform", methods=["POST"])
-
-def transform_sequence():
-    global last_stream
-
-    if last_stream is None:
-        return {"error": "No sequence generated yet"}, 400
-
-    data = request.json
-    operation = data.get("operation")
-    valore = data.get("value")
-
-    if operation == "T":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-
-            right = parts[0]  # melodia
-
-            # 1. trasponi melodia
-            transposed_melody = right.transpose(valore)
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(transposed_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, transposed_melody)
-            # added 02 may
-            new_score.insert(0, clef.TrebleClef())
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-
-            s = new_score
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = last_stream.transpose(valore)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    elif operation == "I":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-
-            right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            inverted_melody = invert_stream(right)
-            inverted_melody = centra_stream(inverted_melody)
-            inverted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(inverted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, inverted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-
-            s = new_score
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = invert_stream(last_stream)
-            s = centra_stream(s)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    elif operation=="R":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
- 
-            parts = list(last_stream.parts)
- 
-            right = parts[0]  # melodia
- 
-            # 1. retrogrado melodia
-            retro_melody = retrograde_stream(right)
-            retro_melody.clef = clef.TrebleClef()
- 
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(retro_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
- 
-            # mano destra
-            new_score.insert(0, retro_melody)
- 
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
- 
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
- 
-            last_stream = copy.deepcopy(new_score)
- 
-            s = new_score
- 
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = retrograde_stream(last_stream)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-
-    elif operation == "RI":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = parts[0]  # melodia
-
-            # 👇 QUI va la tua riga
-            retro_inverted = retrograde_stream(invert_stream(right))
-            retro_inverted = centra_stream(retro_inverted)
-            retro_inverted.clef = clef.TrebleClef()
-
-            # rigenera armonia
-            new_left = rigenera_armonia(retro_inverted)
-
-            # ricostruzione score
-            new_score = stream.Score()
-            new_score.insert(0, retro_inverted)
-
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-            s = new_score
-
-        else:
-            # 👇 stesso punto anche qui
-            s = retrograde_stream(invert_stream(last_stream))
-            s = centra_stream(s)
-
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-
-            last_stream = copy.deepcopy(s)
-    elif operation == "r_Sp":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. shift ritmico melodia di uno step avanti
-            shifted_melody = shift_part(right)
-            shifted_melody.clef = clef.TrebleClef() 
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(shifted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, shifted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = shift_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    elif operation == "r_I":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            inverted_melody = invert_part_ranking(right)
-            inverted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(inverted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, inverted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = invert_part_ranking(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    elif operation == "r_R":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            r_retro_melody = retrograde_rhythm_part(right)
-            r_retro_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(r_retro_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, r_retro_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = retrograde_rhythm_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    elif operation == "r_Sm":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            
-            # 1. permuta ritmi melodia
-            shifted_melody = minus_shift_part(right)
-            shifted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(shifted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, shifted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = minus_shift_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-    else:
-        return {"error": "Invalid operation"}, 400
-
-    # 🎵 esporta MIDI
-    tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
-    s.write('midi', fp=tmp.name)
-
-    return send_file(tmp.name, mimetype="audio/midi")
 
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT PROTETTI  (richiedono JWT valido)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/generate", methods=["POST"])
+@require_auth
+def generate_midi():
+    global last_stream
+    data = request.json
+
+    start_note   = data.get("start_note",   0)
+    interval     = data.get("interval",     3)
+    leap         = data.get("leap",        -1)
+    tempo        = data.get("tempo",        "constant")
+    note_length  = float(data.get("note_length", 0.5))
+    ottave       = data.get("octave",       2)
+    bass_clef    = data.get("bass_clef",    False)
+    harmony      = data.get("harmony",      False)
+    harmony_type = data.get("harmony_type", None)
+
+    melody = genera_binary(
+        tempo, note_length, interval, leap,
+        ottave, bass_clef, start_note, harmony, harmony_type
+    )
+    score = build_score(melody)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
+    score.write('midi', fp=tmp.name)
+
+    last_stream = copy.deepcopy(score)
+    log_access(request.user_email, "generate")
+    return send_file(tmp.name, mimetype="audio/midi")
+
+
+@app.route("/score", methods=["POST"])
+@require_auth
+def generate_score():
+    if last_stream is None:
+        return {"error": "No sequence generated yet"}, 400
+    tmp = tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False)
+    last_stream.write('musicxml', fp=tmp.name)
+    log_access(request.user_email, "score")
+    return send_file(tmp.name, mimetype="application/xml")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT ADMIN  (richiedono header X-Admin-Key: <ADMIN_KEY>)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/users", methods=["GET"])
+@require_admin
+def admin_users():
+    """Lista tutti gli utenti registrati."""
+    db    = get_db()
+    users = db.execute(
+        "SELECT id, email, code, active, created_at FROM users ORDER BY created_at DESC"
+    ).fetchall()
+    return jsonify([dict(u) for u in users]), 200
+
+
+@app.route("/admin/activate", methods=["POST"])
+@require_admin
+def admin_activate():
+    """
+    Attiva un utente: {"email": "..."}.
+    Da chiamare dopo aver ricevuto la registrazione e aver inviato il codice.
+    """
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    db    = get_db()
+    user  = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    if not user:
+        return jsonify({"error": "Utente non trovato"}), 404
+    db.execute("UPDATE users SET active=1 WHERE email=?", (email,))
+    db.commit()
+    return jsonify({"message": f"Utente {email} attivato"}), 200
+
+
+@app.route("/admin/deactivate", methods=["POST"])
+@require_admin
+def admin_deactivate():
+    """Disattiva un utente (revoca accesso senza eliminarlo)."""
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    db    = get_db()
+    db.execute("UPDATE users SET active=0 WHERE email=?", (email,))
+    db.commit()
+    return jsonify({"message": f"Utente {email} disattivato"}), 200
+
+
+@app.route("/admin/user", methods=["DELETE"])
+@require_admin
+def admin_delete_user():
+    """Elimina un utente: {"email": "..."}."""
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    db    = get_db()
+    db.execute("DELETE FROM users WHERE email=?", (email,))
+    db.execute("DELETE FROM access_log WHERE email=?", (email,))
+    db.commit()
+    return jsonify({"message": f"Utente {email} eliminato"}), 200
+
+
+@app.route("/admin/stats", methods=["GET"])
+@require_admin
+def admin_stats():
+    """
+    Restituisce:
+      - totale accessi per utente
+      - dettaglio accessi per endpoint
+      - ultimi 50 accessi cronologici
+    """
+    db = get_db()
+
+    per_user = db.execute("""
+        SELECT email, COUNT(*) as total
+        FROM access_log
+        GROUP BY email
+        ORDER BY total DESC
+    """).fetchall()
+
+    per_endpoint = db.execute("""
+        SELECT email, endpoint, COUNT(*) as count
+        FROM access_log
+        GROUP BY email, endpoint
+        ORDER BY email, count DESC
+    """).fetchall()
+
+    recent = db.execute("""
+        SELECT email, endpoint, ts
+        FROM access_log
+        ORDER BY ts DESC
+        LIMIT 50
+    """).fetchall()
+
+    return jsonify({
+        "per_user":     [dict(r) for r in per_user],
+        "per_endpoint": [dict(r) for r in per_endpoint],
+        "recent":       [dict(r) for r in recent],
+    }), 200
+
+
+# ── Avvio ────────────────────────────────────────────────────────────────────
 port = int(os.environ.get("PORT", 5000))
 app.run(host="0.0.0.0", port=port)
