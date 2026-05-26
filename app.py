@@ -1,51 +1,45 @@
 # ════════════════════════════════════════════════════════════════════════════
-#  app.py  —  Backend Flask per GeCo-Tool con autenticazione e logging
+#  app.py  —  Backend Flask per GeCo-Tool con autenticazione JWT
 #
-#  Endpoint pubblici:
-#    POST /register      → registra email, crea codice in attesa
-#    POST /verify        → verifica codice, restituisce JWT
-#    GET  /health        → check disponibilità server
-#
-#  Endpoint protetti (richiedono JWT valido):
-#    POST /generate      → genera sequenza MIDI
-#    POST /score         → restituisce MusicXML
-#
-#  Endpoint admin (richiedono header X-Admin-Key):
-#    GET  /admin/users   → lista utenti registrati
-#    GET  /admin/stats   → accessi per utente e per endpoint
-#    POST /admin/activate  → attiva un utente fornendo il codice
-#    DELETE /admin/user  → elimina un utente
+#  Endpoint:
+#    POST /auth/login   → verifica email + codice, restituisce token JWT
+#    POST /auth/log     → logga ogni accesso all'app (richiede token)
+#    GET  /admin/users  → lista utenti e log (richiede header X-Admin-Key)
+#    POST /generate     → genera MIDI (richiede token JWT valido)
+#    POST /score        → restituisce MusicXML (richiede token JWT valido)
+#    GET  /health       → check disponibilità server
 #
 #  Dipendenze:  flask  flask-cors  music21  PyJWT
-#  Installa con:  pip install flask flask-cors music21 PyJWT
+#
+#  File di dati (nella stessa cartella di app.py):
+#    users.json       → lista utenti autorizzati (gestito manualmente da te)
+#    access_log.json  → log degli accessi (generato automaticamente)
 # ════════════════════════════════════════════════════════════════════════════
 
-import os
-import sqlite3
-import secrets
-import copy
-import tempfile
-import datetime
-
-from flask import Flask, send_file, request, jsonify, g
+from flask import Flask, send_file, request, jsonify
 from flask_cors import CORS
 from music21 import stream, note, clef, meter, key, metadata, instrument
+from functools import wraps
+import tempfile
+import copy
+import json
+import os
 import jwt
+import datetime
 
 from binary import genera_binary
 
-
 # ── Configurazione ───────────────────────────────────────────────────────────
 
-# Cambia queste due costanti nelle variabili d'ambiente di Render:
-#   JWT_SECRET  → stringa casuale lunga (es. genera con: python -c "import secrets; print(secrets.token_hex(32))")
-#   ADMIN_KEY   → password per accedere agli endpoint /admin/*
-JWT_SECRET = os.environ.get("JWT_SECRET", "cambia-questo-segreto-in-produzione")
-ADMIN_KEY  = os.environ.get("ADMIN_KEY",  "admin-password-da-cambiare")
-JWT_EXP_DAYS = 30   # il token JWT scade dopo N giorni
+# CAMBIA QUESTI VALORI prima del deploy!
+JWT_SECRET    = os.environ.get("JWT_SECRET",    "cambia_questa_stringa_segreta_123")
+ADMIN_KEY     = os.environ.get("ADMIN_KEY",     "cambia_questa_chiave_admin_456")
+JWT_EXP_HOURS = int(os.environ.get("JWT_EXP_HOURS", 24))   # durata token in ore
 
-DB_PATH = os.environ.get("DB_PATH", "geco.db")
-
+# Percorsi dei file dati (relativi alla cartella di app.py)
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+USERS_FILE    = os.path.join(BASE_DIR, "users.json")
+LOG_FILE      = os.path.join(BASE_DIR, "access_log.json")
 
 # ── Stato globale ────────────────────────────────────────────────────────────
 last_stream = None
@@ -53,116 +47,190 @@ last_stream = None
 # ── Inizializzazione Flask ───────────────────────────────────────────────────
 app = Flask(__name__)
 
-CORS(app, origins=[
-    "http://localhost:5000",
-    "http://localhost:8000",
-    "http://127.0.0.1:5000",
-    "null",
-    "https://murosigma.it",
-    "https://www.murosigma.it",
-    "https://marcobittelli.it",
-    "https://www.marcobittelli.it"
-])
+CORS(app,
+    origins=[
+        "http://localhost:5000",
+        "http://localhost:8000",
+        "http://127.0.0.1:5000",
+        "null",
+        "https://murosigma.it",
+        "https://www.murosigma.it",
+        "https://marcobittelli.it",
+        "https://www.marcobittelli.it"
+    ],
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
+    supports_credentials=True
+)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  DATABASE  (SQLite — file locale, persiste sul disco di Render se si usa
-#  un Persistent Disk; altrimenti si azzera ad ogni deploy → valuta PostgreSQL
-#  per produzione seria)
+#  HELPERS: lettura/scrittura file JSON
 # ════════════════════════════════════════════════════════════════════════════
 
-def get_db():
-    """Restituisce la connessione SQLite per la richiesta corrente."""
-    if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-    return g.db
+def load_users():
+    """Legge users.json. Se non esiste restituisce lista vuota."""
+    if not os.path.exists(USERS_FILE):
+        return []
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-@app.teardown_appcontext
-def close_db(exc):
-    db = g.pop("db", None)
-    if db:
-        db.close()
 
-def init_db():
-    """Crea le tabelle se non esistono."""
-    with app.app_context():
-        db = get_db()
-        db.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                email      TEXT    NOT NULL UNIQUE,
-                code       TEXT    NOT NULL,
-                active     INTEGER NOT NULL DEFAULT 0,   -- 0 = in attesa, 1 = attivato
-                created_at TEXT    NOT NULL
-            );
+def load_log():
+    """Legge access_log.json. Se non esiste restituisce lista vuota."""
+    if not os.path.exists(LOG_FILE):
+        return []
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-            CREATE TABLE IF NOT EXISTS access_log (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                email      TEXT    NOT NULL,
-                endpoint   TEXT    NOT NULL,
-                ts         TEXT    NOT NULL
-            );
-        """)
-        db.commit()
 
-init_db()
+def append_log(entry: dict):
+    """Aggiunge una voce al log degli accessi (append sicuro)."""
+    log = load_log()
+    log.append(entry)
+    with open(LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(log, f, ensure_ascii=False, indent=2)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  HELPERS
+#  DECORATOR: require_token
+#  Protegge gli endpoint che richiedono autenticazione JWT.
+#  Il token va inviato nell'header:  Authorization: Bearer <token>
 # ════════════════════════════════════════════════════════════════════════════
 
-def require_auth(f):
-    """
-    Decoratore: verifica il token JWT nell'header Authorization.
-    Inietta request.user_email se valido, altrimenti restituisce 401.
-    """
-    from functools import wraps
+def require_token(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
             return jsonify({"error": "Token mancante"}), 401
-        token = auth[7:]
+        token = auth_header.split(" ", 1)[1]
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            request.user_email = payload.get("email", "unknown")
         except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token scaduto"}), 401
+            return jsonify({"error": "Token scaduto, effettua di nuovo il login"}), 401
         except jwt.InvalidTokenError:
             return jsonify({"error": "Token non valido"}), 401
-
-        # Controlla che l'utente sia ancora attivo nel DB
-        db = get_db()
-        user = db.execute("SELECT active FROM users WHERE email=?", (payload["email"],)).fetchone()
-        if not user or not user["active"]:
-            return jsonify({"error": "Utente non autorizzato"}), 403
-
-        request.user_email = payload["email"]
         return f(*args, **kwargs)
     return decorated
 
 
-def require_admin(f):
-    """Decoratore: verifica l'header X-Admin-Key."""
-    from functools import wraps
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if request.headers.get("X-Admin-Key") != ADMIN_KEY:
-            return jsonify({"error": "Non autorizzato"}), 403
-        return f(*args, **kwargs)
-    return decorated
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT: POST /auth/login
+#
+#  Body JSON: { "email": "...", "code": "..." }
+#  Risposta:  { "token": "<jwt>" }   oppure  401
+# ════════════════════════════════════════════════════════════════════════════
 
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data  = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    code  = (data.get("code")  or "").strip()
 
-def log_access(email, endpoint):
-    """Scrive una riga nella tabella access_log."""
-    db = get_db()
-    db.execute(
-        "INSERT INTO access_log (email, endpoint, ts) VALUES (?, ?, ?)",
-        (email, endpoint, datetime.datetime.utcnow().isoformat())
+    if not email or not code:
+        return jsonify({"error": "Email e codice obbligatori"}), 400
+
+    users = load_users()
+    user  = next(
+        (u for u in users
+         if u["email"].lower() == email and u["code"] == code and u.get("active", True)),
+        None
     )
-    db.commit()
 
+    if not user:
+        # Log tentativo fallito
+        append_log({
+            "type":      "login_failed",
+            "email":     email,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "ip":        request.headers.get("X-Forwarded-For", request.remote_addr)
+        })
+        return jsonify({"error": "Credenziali non valide o accesso non autorizzato"}), 401
+
+    # Genera token JWT
+    payload = {
+        "email": email,
+        "exp":   datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXP_HOURS)
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+    # Log login riuscito
+    append_log({
+        "type":      "login_ok",
+        "email":     email,
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "ip":        request.headers.get("X-Forwarded-For", request.remote_addr)
+    })
+
+    return jsonify({"token": token}), 200
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT: POST /auth/log
+#
+#  Il frontend chiama questo endpoint ogni volta che l'utente usa l'app
+#  (es. ogni Generate). Richiede token valido.
+#  Body JSON: { "action": "generate" }  (opzionale, per dettaglio)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/auth/log", methods=["POST"])
+@require_token
+def log_access():
+    data   = request.json or {}
+    action = data.get("action", "app_use")
+    append_log({
+        "type":      action,
+        "email":     request.user_email,
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "ip":        request.headers.get("X-Forwarded-For", request.remote_addr)
+    })
+    return jsonify({"ok": True}), 200
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT: GET /admin/users
+#
+#  Restituisce la lista utenti e il log degli accessi.
+#  Protetto da header:  X-Admin-Key: <ADMIN_KEY>
+#  Solo per uso tuo (non esporre nell'interfaccia pubblica).
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/users", methods=["GET"])
+def admin_users():
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        return jsonify({"error": "Non autorizzato"}), 403
+
+    users = load_users()
+    log   = load_log()
+
+    # Statistiche rapide per utente
+    from collections import Counter
+    logins  = [e["email"] for e in log if e.get("type") == "login_ok"]
+    actions = [e["email"] for e in log if e.get("type") == "generate"]
+    login_counts  = Counter(logins)
+    action_counts = Counter(actions)
+
+    summary = []
+    for u in users:
+        em = u["email"].lower()
+        summary.append({
+            "email":       u["email"],
+            "active":      u.get("active", True),
+            "logins":      login_counts.get(em, 0),
+            "generations": action_counts.get(em, 0),
+        })
+
+    return jsonify({
+        "users":  summary,
+        "log":    log[-100:]   # ultime 100 voci
+    }), 200
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  FUNZIONE: build_score
+# ════════════════════════════════════════════════════════════════════════════
 
 def build_score(melody):
     ts = meter.TimeSignature('4/4')
@@ -180,100 +248,11 @@ def build_score(melody):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  ENDPOINT PUBBLICI
-# ════════════════════════════════════════════════════════════════════════════
-
-@app.route("/register", methods=["POST"])
-def register():
-    """
-    Riceve {"email": "..."}.
-    Crea il record utente con un codice casuale a 8 caratteri.
-    L'utente NON è ancora attivo: devi attivarlo via /admin/activate.
-    Restituisce il codice così che tu possa inviarlo manualmente all'utente.
-    """
-    data  = request.json or {}
-    email = (data.get("email") or "").strip().lower()
-    if not email or "@" not in email:
-        return jsonify({"error": "Email non valida"}), 400
-
-    db   = get_db()
-    existing = db.execute("SELECT id, active FROM users WHERE email=?", (email,)).fetchone()
-
-    if existing:
-        if existing["active"]:
-            return jsonify({"error": "Email già registrata e attiva"}), 409
-        else:
-            # Rigenera il codice se era in attesa
-            code = secrets.token_hex(4).upper()   # es. "A3F7B2C1"
-            db.execute("UPDATE users SET code=? WHERE email=?", (code, email))
-            db.commit()
-            return jsonify({
-                "message": "Registrazione aggiornata. In attesa di attivazione.",
-                "code":    code   # mostrato solo in questa risposta — salvalo tu
-            }), 200
-
-    code = secrets.token_hex(4).upper()
-    db.execute(
-        "INSERT INTO users (email, code, active, created_at) VALUES (?, ?, 0, ?)",
-        (email, code, datetime.datetime.utcnow().isoformat())
-    )
-    db.commit()
-
-    # Il codice viene restituito nella risposta JSON (visibile solo a te via curl/Postman)
-    # In alternativa puoi integrare un servizio email (SendGrid, Mailgun, ecc.)
-    return jsonify({
-        "message": "Registrazione ricevuta. In attesa di attivazione da parte dell'amministratore.",
-        "code":    code   # ← invia questo codice all'utente via email manualmente
-    }), 201
-
-
-@app.route("/verify", methods=["POST"])
-def verify():
-    """
-    Riceve {"email": "...", "code": "..."}.
-    Se email+codice sono corretti e l'utente è attivo → restituisce JWT.
-    """
-    data  = request.json or {}
-    email = (data.get("email") or "").strip().lower()
-    code  = (data.get("code")  or "").strip().upper()
-
-    if not email or not code:
-        return jsonify({"error": "Email e codice sono obbligatori"}), 400
-
-    db   = get_db()
-    user = db.execute(
-        "SELECT active, code FROM users WHERE email=?", (email,)
-    ).fetchone()
-
-    if not user:
-        return jsonify({"error": "Email non trovata"}), 404
-    if user["code"] != code:
-        return jsonify({"error": "Codice non corretto"}), 401
-    if not user["active"]:
-        return jsonify({"error": "Account non ancora attivato. Attendi la conferma."}), 403
-
-    # Genera il JWT
-    payload = {
-        "email": email,
-        "exp":   datetime.datetime.utcnow() + datetime.timedelta(days=JWT_EXP_DAYS)
-    }
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-    log_access(email, "verify/login")
-    return jsonify({"token": token}), 200
-
-
-@app.route("/health")
-def health():
-    return {"status": "ok"}, 200
-
-
-# ════════════════════════════════════════════════════════════════════════════
-#  ENDPOINT PROTETTI  (richiedono JWT valido)
+#  ENDPOINT: POST /generate  (protetto da token)
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/generate", methods=["POST"])
-@require_auth
+@require_token
 def generate_midi():
     global last_stream
     data = request.json
@@ -296,118 +275,40 @@ def generate_midi():
 
     tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
     score.write('midi', fp=tmp.name)
-
     last_stream = copy.deepcopy(score)
-    log_access(request.user_email, "generate")
+
+    # Log dell'azione
+    append_log({
+        "type":      "generate",
+        "email":     request.user_email,
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "params":    {"interval": interval, "leap": leap}
+    })
+
     return send_file(tmp.name, mimetype="audio/midi")
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT: POST /score  (protetto da token)
+# ════════════════════════════════════════════════════════════════════════════
+
 @app.route("/score", methods=["POST"])
-@require_auth
+@require_token
 def generate_score():
     if last_stream is None:
         return {"error": "No sequence generated yet"}, 400
     tmp = tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False)
     last_stream.write('musicxml', fp=tmp.name)
-    log_access(request.user_email, "score")
     return send_file(tmp.name, mimetype="application/xml")
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  ENDPOINT ADMIN  (richiedono header X-Admin-Key: <ADMIN_KEY>)
+#  ENDPOINT: GET /health
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.route("/admin/users", methods=["GET"])
-@require_admin
-def admin_users():
-    """Lista tutti gli utenti registrati."""
-    db    = get_db()
-    users = db.execute(
-        "SELECT id, email, code, active, created_at FROM users ORDER BY created_at DESC"
-    ).fetchall()
-    return jsonify([dict(u) for u in users]), 200
-
-
-@app.route("/admin/activate", methods=["POST"])
-@require_admin
-def admin_activate():
-    """
-    Attiva un utente: {"email": "..."}.
-    Da chiamare dopo aver ricevuto la registrazione e aver inviato il codice.
-    """
-    data  = request.json or {}
-    email = (data.get("email") or "").strip().lower()
-    db    = get_db()
-    user  = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
-    if not user:
-        return jsonify({"error": "Utente non trovato"}), 404
-    db.execute("UPDATE users SET active=1 WHERE email=?", (email,))
-    db.commit()
-    return jsonify({"message": f"Utente {email} attivato"}), 200
-
-
-@app.route("/admin/deactivate", methods=["POST"])
-@require_admin
-def admin_deactivate():
-    """Disattiva un utente (revoca accesso senza eliminarlo)."""
-    data  = request.json or {}
-    email = (data.get("email") or "").strip().lower()
-    db    = get_db()
-    db.execute("UPDATE users SET active=0 WHERE email=?", (email,))
-    db.commit()
-    return jsonify({"message": f"Utente {email} disattivato"}), 200
-
-
-@app.route("/admin/user", methods=["DELETE"])
-@require_admin
-def admin_delete_user():
-    """Elimina un utente: {"email": "..."}."""
-    data  = request.json or {}
-    email = (data.get("email") or "").strip().lower()
-    db    = get_db()
-    db.execute("DELETE FROM users WHERE email=?", (email,))
-    db.execute("DELETE FROM access_log WHERE email=?", (email,))
-    db.commit()
-    return jsonify({"message": f"Utente {email} eliminato"}), 200
-
-
-@app.route("/admin/stats", methods=["GET"])
-@require_admin
-def admin_stats():
-    """
-    Restituisce:
-      - totale accessi per utente
-      - dettaglio accessi per endpoint
-      - ultimi 50 accessi cronologici
-    """
-    db = get_db()
-
-    per_user = db.execute("""
-        SELECT email, COUNT(*) as total
-        FROM access_log
-        GROUP BY email
-        ORDER BY total DESC
-    """).fetchall()
-
-    per_endpoint = db.execute("""
-        SELECT email, endpoint, COUNT(*) as count
-        FROM access_log
-        GROUP BY email, endpoint
-        ORDER BY email, count DESC
-    """).fetchall()
-
-    recent = db.execute("""
-        SELECT email, endpoint, ts
-        FROM access_log
-        ORDER BY ts DESC
-        LIMIT 50
-    """).fetchall()
-
-    return jsonify({
-        "per_user":     [dict(r) for r in per_user],
-        "per_endpoint": [dict(r) for r in per_endpoint],
-        "recent":       [dict(r) for r in recent],
-    }), 200
+@app.route("/health")
+def health():
+    return {"status": "ok"}, 200
 
 
 # ── Avvio ────────────────────────────────────────────────────────────────────
