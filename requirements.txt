@@ -2,4 +2,3 @@ Flask
 music21
 gunicorn
 flask-cors
-PyJWT
