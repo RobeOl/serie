@@ -3,7 +3,7 @@ from flask_cors import CORS
 from music21 import *
 import tempfile
 import os
-from sequenza import genera_sequenza
+from multidimensional import genera_multidimensional
 
 import copy
 from centra import centra_stream
@@ -11,9 +11,9 @@ from centra import centra_stream
 app = Flask(__name__)
 
 CORS(app, origins=[
-    "http://localhost:5000",
+    "http://localhost:5002",
     "http://localhost:8000",
-    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5002",
     "null",  # ← per file aperti da file:// nel browser
     "https://murosigma.it",
     "https://www.murosigma.it",
@@ -26,32 +26,32 @@ last_stream = None
 last_params = None
 access_count = 0
 
-def generate_music(start_note, tempo_type, bpm=100,
-                   note_length=1,
-                   k_value=None,
-                   multi_values=None):
+# def generate_music(start_note, tempo_type, bpm=100,
+#                    note_length=1,
+#                    k_value=None,
+#                    multi_values=None):
 
-    s = genera_sequenza(tempo_type, note_length,
-        k_value, multi_values=multi_values)
+#     s = genera_sequenza(tempo_type, note_length,
+#         k_value, multi_values=multi_values)
 
     
 
-    melody = s
-    ts = meter.TimeSignature('4/4')
-    melody.insert(0, ts)
-    total_duration = melody.duration.quarterLength
-    measure_duration = ts.barDuration.quarterLength
-    remainder = total_duration % measure_duration
-    if remainder != 0:
-        missing = measure_duration - remainder
-        melody.append(note.Rest(quarterLength=missing))
-    melody.insert(0, key.Key('C'))
-    melody.insert(0, metadata.Metadata())
-    melody.metadata.title = ""
-    melody.metadata.composer = ""
-    melody.insert(0, instrument.Piano())
+#     melody = s
+#     ts = meter.TimeSignature('4/4')
+#     melody.insert(0, ts)
+#     total_duration = melody.duration.quarterLength
+#     measure_duration = ts.barDuration.quarterLength
+#     remainder = total_duration % measure_duration
+#     if remainder != 0:
+#         missing = measure_duration - remainder
+#         melody.append(note.Rest(quarterLength=missing))
+#     melody.insert(0, key.Key('C'))
+#     melody.insert(0, metadata.Metadata())
+#     melody.metadata.title = ""
+#     melody.metadata.composer = ""
+#     melody.insert(0, instrument.Piano())
 
-    return melody
+#     return melody
 
 def invert_stream(s):
     inverted = stream.Part()
@@ -403,9 +403,11 @@ def generate_multidimensional():
     tempo_type    = data.get("tempo", "sequence-constrained")
     note_length   = float(data.get("note_length", 1))
     repeated      = bool(data.get("repeated", True))
+    p_triplet     = float(data.get("p_triplet", 0.0))
 
     # Genera la sequenza
-    melody = genera_sequenza(tempo_type, note_length, K, start_note, repeated)
+    melody = genera_multidimensional(tempo_type, note_length, K, start_note, repeated,
+                                     p_triplet=p_triplet)
 
     # Aggiungi metadati e completa l'ultima battuta
     ts = meter.TimeSignature('4/4')
@@ -431,54 +433,54 @@ def generate_multidimensional():
     return send_file(tmp.name, mimetype="audio/midi")
 
 
-@app.route("/generate", methods=["POST"])
-def generate_midi():
-    global last_stream
-    global last_params
+# @app.route("/generate", methods=["POST"])
+# def generate_midi():
+#     global last_stream
+#     global last_params
 
-    data = request.json
+#     data = request.json
 
-    # Multidimensional: lista di K interi
-    raw_multi = data.get("multi_values", [])
-    multi_values = [int(v) for v in raw_multi] if raw_multi else None
+#     # Multidimensional: lista di K interi
+#     raw_multi = data.get("multi_values", [])
+#     multi_values = [int(v) for v in raw_multi] if raw_multi else None
 
-    s = generate_music(
-        data.get("start_note"),
-        data.get("sequence_type"),
-        data.get("tempo"),
-        data.get("harmony"),
-        data.get("harmony_type"),
-        data.get("octave", 1),
-        data.get("bass_clef"),
-        data.get("bpm", 100),
-        float(data.get("note_length", 1)),
-        data.get("interval", 0),
-        data.get("leap", 0),
-        data.get("interval1", 0),
-        data.get("leap1", 0),
-        data.get("interval2", 0),
-        data.get("leap2", 0),
-        data.get("int1", 0),
-        data.get("lea1", 0),
-        data.get("int2", 0),
-        data.get("lea2", 0),
-        data.get("int3", 0),
-        data.get("lea3", 0),
-        data.get("inter1", 0),
-        data.get("inter2", 0),
-        data.get("inter3", 0),
-        multi_values=multi_values
-    )
+#     s = generate_music(
+#         data.get("start_note"),
+#         data.get("sequence_type"),
+#         data.get("tempo"),
+#         data.get("harmony"),
+#         data.get("harmony_type"),
+#         data.get("octave", 1),
+#         data.get("bass_clef"),
+#         data.get("bpm", 100),
+#         float(data.get("note_length", 1)),
+#         data.get("interval", 0),
+#         data.get("leap", 0),
+#         data.get("interval1", 0),
+#         data.get("leap1", 0),
+#         data.get("interval2", 0),
+#         data.get("leap2", 0),
+#         data.get("int1", 0),
+#         data.get("lea1", 0),
+#         data.get("int2", 0),
+#         data.get("lea2", 0),
+#         data.get("int3", 0),
+#         data.get("lea3", 0),
+#         data.get("inter1", 0),
+#         data.get("inter2", 0),
+#         data.get("inter3", 0),
+#         multi_values=multi_values
+#     )
 
-    # salva la sequenza reale (fondamentale)
-    last_stream = copy.deepcopy(s)
-    # salva ultimi parametri
-    last_params = data
+#     # salva la sequenza reale (fondamentale)
+#     last_stream = copy.deepcopy(s)
+#     # salva ultimi parametri
+#     last_params = data
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
-    s.write('midi', fp=tmp.name)
+#     tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
+#     s.write('midi', fp=tmp.name)
 
-    return send_file(tmp.name, mimetype="audio/midi")
+#     return send_file(tmp.name, mimetype="audio/midi")
 
 
 @app.route("/score", methods=["POST"])
@@ -957,5 +959,5 @@ def health():
     return {"status": "ok"}, 200
 
 
-port = int(os.environ.get("PORT", 5000))
+port = int(os.environ.get("PORT", 5002))
 app.run(host="0.0.0.0", port=port)
