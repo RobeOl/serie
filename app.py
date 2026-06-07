@@ -549,21 +549,6 @@ def import_midi():
 
     return send_file(tmp_xml.name, mimetype="application/xml")
 
-
-def rigenera_armonia(melody):
-    tempo_type = last_params.get("tempo")
-    if tempo_type in ("sequence-constrained", "constant"):
-        raw_multi = last_params.get("multi_values", [])
-        multi_k = len(raw_multi) if raw_multi else None
-        return genera_armonia(
-            last_params.get("sequence_type"),
-            last_params.get("harmony_type"),
-            melody,
-            multi_k=multi_k
-        )
-    else:
-        return genera_armonia_coppie(melody)
-
 @app.route("/transform", methods=["POST"])
 
 def transform_sequence():
@@ -577,376 +562,36 @@ def transform_sequence():
     valore = data.get("value")
 
     if operation == "T":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-
-            right = parts[0]  # melodia
-
-            # 1. trasponi melodia
-            transposed_melody = right.transpose(valore)
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(transposed_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, transposed_melody)
-            # added 02 may
-            new_score.insert(0, clef.TrebleClef())
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-
-            s = new_score
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = last_stream.transpose(valore)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        s = last_stream.transpose(valore)
     elif operation == "I":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-
-            right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            inverted_melody = invert_stream(right)
-            inverted_melody = centra_stream(inverted_melody)
-            inverted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(inverted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, inverted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-
-            s = new_score
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = invert_stream(last_stream)
-            s = centra_stream(s)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        s = invert_stream(last_stream)
+        s = centra_stream(s)
     elif operation=="R":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
- 
-            parts = list(last_stream.parts)
- 
-            right = parts[0]  # melodia
- 
-            # 1. retrogrado melodia
-            retro_melody = retrograde_stream(right)
-            retro_melody.clef = clef.TrebleClef()
- 
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(retro_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
- 
-            # mano destra
-            new_score.insert(0, retro_melody)
- 
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
- 
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
- 
-            last_stream = copy.deepcopy(new_score)
- 
-            s = new_score
- 
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            s = retrograde_stream(last_stream)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
-
+        s = retrograde_stream(last_stream)
     elif operation == "RI":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = parts[0]  # melodia
-
-            # 👇 QUI va la tua riga
-            retro_inverted = retrograde_stream(invert_stream(right))
-            retro_inverted = centra_stream(retro_inverted)
-            retro_inverted.clef = clef.TrebleClef()
-
-            # rigenera armonia
-            new_left = rigenera_armonia(retro_inverted)
-
-            # ricostruzione score
-            new_score = stream.Score()
-            new_score.insert(0, retro_inverted)
-
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)
-            s = new_score
-
-        else:
-            # 👇 stesso punto anche qui
-            s = retrograde_stream(invert_stream(last_stream))
-            s = centra_stream(s)
-
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-
-            last_stream = copy.deepcopy(s)
-    elif operation == "r_Sp":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. shift ritmico melodia di uno step avanti
-            shifted_melody = shift_part(right)
-            shifted_melody.clef = clef.TrebleClef() 
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(shifted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, shifted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = shift_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        s = retrograde_stream(invert_stream(last_stream))
+        s = centra_stream(s)
+    elif operation == "r_Sp":                
+        flat = flatten_to_part(last_stream)  # ← appiattisci prima
+        s = shift_part(flat)
     elif operation == "r_I":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            inverted_melody = invert_part_ranking(right)
-            inverted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(inverted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, inverted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = invert_part_ranking(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        flat = flatten_to_part(last_stream)  # ← appiattisci prima
+        s = invert_part_ranking(flat)
     elif operation == "r_R":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            # right = parts[0]  # melodia
-
-            # 1. inverti melodia
-            r_retro_melody = retrograde_rhythm_part(right)
-            r_retro_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(r_retro_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, r_retro_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = retrograde_rhythm_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        flat = flatten_to_part(last_stream)  # ← appiattisci prima
+        s = retrograde_rhythm_part(flat)
     elif operation == "r_Sm":
-        # 🎼 CASO CON ARMONIA
-        if isinstance(last_stream, stream.Score):
-
-            parts = list(last_stream.parts)
-            right = flatten_to_part(parts[0])  # ← appiattisci prima
-            
-            # 1. permuta ritmi melodia
-            shifted_melody = minus_shift_part(right)
-            shifted_melody.clef = clef.TrebleClef()
-
-            # 2. rigenera armonia
-            new_left = rigenera_armonia(shifted_melody)
-            
-            # 3. ricostruisci score
-            new_score = stream.Score()
-
-            # mano destra
-            new_score.insert(0, shifted_melody)
-
-            # mano sinistra
-            #new_left.insert(0, instrument.Piano())
-            new_left.insert(0, clef.BassClef())
-            new_score.insert(0, new_left)
-
-            # metadata
-            #new_score.insert(0, key.Key('C'))
-            new_score.insert(0, metadata.Metadata())
-            #new_score.insert(0, instrument.Piano())
-            new_score.metadata.title = ""
-            new_score.metadata.composer = ""
-
-            last_stream = copy.deepcopy(new_score)  # ← manca
-            s = new_score 
-
-        # 🎼 CASO SENZA ARMONIA
-        else:
-            flat = flatten_to_part(last_stream)  # ← appiattisci prima
-            s = minus_shift_part(flat)
-            s.insert(0, key.Key('C'))
-            s.insert(0, metadata.Metadata())
-            s.insert(0, instrument.Piano())
-            s.metadata.title = ""
-            s.metadata.composer = ""
-            last_stream = copy.deepcopy(s)
+        flat = flatten_to_part(last_stream)  # ← appiattisci prima
+        s = minus_shift_part(flat)
     else:
         return {"error": "Invalid operation"}, 400
+
+    s.insert(0, key.Key('C'))
+    s.insert(0, metadata.Metadata())
+    s.insert(0, instrument.Piano())
+    s.metadata.title = ""
+    s.metadata.composer = ""
+    last_stream = copy.deepcopy(s)
 
     # 🎵 esporta MIDI
     tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
