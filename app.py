@@ -18,7 +18,7 @@ CORS(app, origins=[
     "https://murosigma.it",
     "https://www.murosigma.it",
     "https://marcobittelli.it",
-    "https://www.marcobittelli.it"
+    "https://www.marcobittelli.it",
     "https://localhost",        # ← Capacitor Android (WebView)
 ])
 
