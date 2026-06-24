@@ -19,6 +19,7 @@ CORS(app, origins=[
     "https://www.murosigma.it",
     "https://marcobittelli.it",
     "https://www.marcobittelli.it"
+    "https://localhost",        # ← Capacitor Android (WebView)
 ])
 
 # 🔹 CACHE GLOBALE
